@@ -1,0 +1,30 @@
+{
+  "name": "artflow-game-art-platform",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1 --port 4173\" \"node server.mjs\"",
+    "dev:web": "vite --host 127.0.0.1",
+    "dev:api": "node server.mjs",
+    "build": "tsc -b && vite build",
+    "build:pages": "tsc -b && vite build --base=/Artflow/",
+    "preview": "vite preview --host 127.0.0.1"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "express": "latest",
+    "lucide-react": "latest",
+    "multer": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "react-router-dom": "latest",
+    "vite": "latest"
+  },
+  "devDependencies": {
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "concurrently": "latest",
+    "typescript": "latest"
+  }
+}
