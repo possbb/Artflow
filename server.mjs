@@ -2,8 +2,8 @@ import express from 'express'
 import multer from 'multer'
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { cp, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { extname, join, resolve } from 'node:path'
+import { cp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { extname, isAbsolute, join, parse, relative, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
 const app = express()
@@ -13,10 +13,11 @@ const dataRoot = join(workspaceRoot, 'project-data')
 const projectsRoot = join(dataRoot, 'projects')
 const incomingRoot = join(dataRoot, '.incoming')
 const defaultProjectId = 'project-default'
-const supportedModules = new Set(['character-motion', 'skill-vfx'])
-const assetModules = new Set(['main-visual-design', 'character-design', 'character-motion', 'skill-design', 'skill-vfx', 'background-design', 'map-elements', 'game-ui', 'story-level-design', 'unassigned'])
+const supportedModules = new Set(['character-motion', 'skill-vfx', 'pet-content'])
+const assetModules = new Set(['main-visual-design', 'character-design', 'character-motion', 'skill-design', 'skill-vfx', 'background-design', 'map-elements', 'game-ui', 'story-level-design', 'pet-content', 'unassigned'])
 const supportedExtensions = new Set(['.mp4', '.webm', '.mov', '.mkv', '.avi'])
 const supportedImageExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif'])
+const supportedAudioExtensions = new Set(['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac'])
 const projectIdPattern = /^project-(?:default|\d{13}-[a-f0-9]{8})$/i
 
 await mkdir(projectsRoot, { recursive: true })
@@ -39,12 +40,37 @@ const imageUpload = multer({
   },
 })
 
+const frameImageUpload = multer({
+  dest: incomingRoot,
+  limits: { fileSize: 20 * 1024 * 1024, files: 2000 },
+  fileFilter: (_request, file, callback) => {
+    callback(null, extname(file.originalname).toLowerCase() === '.png')
+  },
+})
+
+const audioUpload = multer({
+  dest: incomingRoot,
+  limits: { fileSize: 100 * 1024 * 1024, files: 1 },
+  fileFilter: (_request, file, callback) => {
+    const extension = extname(file.originalname).toLowerCase()
+    callback(null, file.mimetype.startsWith('audio/') || supportedAudioExtensions.has(extension))
+  },
+})
+
 app.use(express.json({ limit: '2mb' }))
 app.use('/project-data', express.static(dataRoot, {
   dotfiles: 'deny',
   index: false,
   fallthrough: false,
 }))
+app.use('/project-assets/:projectId', async (request, response, next) => {
+  try {
+    const assetRoot = await getProjectAssetFolder(request.params.projectId)
+    express.static(assetRoot, { dotfiles: 'deny', index: false, fallthrough: false })(request, response, next)
+  } catch {
+    response.status(404).json({ error: '项目素材目录不存在。' })
+  }
+})
 
 function run(command, args) {
   return new Promise((resolvePromise, rejectPromise) => {
@@ -61,6 +87,32 @@ function run(command, args) {
   })
 }
 
+function selectFolderWithSystemDialog() {
+  if (process.platform !== 'win32') throw new Error('当前系统暂不支持原生文件夹选择器。')
+  const script = [
+    'Add-Type -AssemblyName System.Windows.Forms',
+    '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)',
+    '$dialog = New-Object System.Windows.Forms.FolderBrowserDialog',
+    "$dialog.Description = '选择已有文件夹作为项目美术素材存放位置'",
+    '$dialog.ShowNewFolderButton = $true',
+    "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Write($dialog.SelectedPath); exit 0 }",
+    'exit 2',
+  ].join('; ')
+  return new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn('powershell.exe', ['-NoProfile', '-STA', '-Command', script], { windowsHide: true })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.on('data', (chunk) => { stdout += chunk.toString() })
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString() })
+    child.on('error', rejectPromise)
+    child.on('close', (code) => {
+      if (code === 0) resolvePromise(stdout.trim())
+      else if (code === 2) resolvePromise('')
+      else rejectPromise(new Error(stderr.trim() || '无法打开文件夹选择器。'))
+    })
+  })
+}
+
 function assertProjectId(value) {
   const projectId = String(value || '')
   if (!projectIdPattern.test(projectId)) throw new Error('无效的项目 ID。')
@@ -71,27 +123,59 @@ function getProjectFolder(projectId) {
   return join(projectsRoot, assertProjectId(projectId))
 }
 
-async function ensureProjectFolders(projectId) {
-  const projectFolder = getProjectFolder(projectId)
-  await Promise.all([
-    mkdir(join(projectFolder, 'assets', 'source'), { recursive: true }),
-    mkdir(join(projectFolder, 'assets', 'runtime'), { recursive: true }),
-    mkdir(join(projectFolder, 'assets', 'references'), { recursive: true }),
-    mkdir(join(projectFolder, 'assets', 'versions'), { recursive: true }),
-    mkdir(join(projectFolder, 'frame-sequences'), { recursive: true }),
-    mkdir(join(projectFolder, 'evidence'), { recursive: true }),
-  ])
-  return projectFolder
+function normalizeAssetStoragePath(value) {
+  const rawPath = String(value || '').trim()
+  if (!rawPath) return ''
+  if (!isAbsolute(rawPath)) throw new Error('素材目录必须使用完整的绝对路径。')
+  const storagePath = resolve(rawPath)
+  if (parse(storagePath).root === storagePath) throw new Error('不能直接使用磁盘根目录存放项目素材。')
+  const relativeToProjects = relative(projectsRoot, storagePath)
+  if (!relativeToProjects || (!relativeToProjects.startsWith('..') && !isAbsolute(relativeToProjects))) {
+    throw new Error('请不要选择平台内部的 project-data/projects 目录。')
+  }
+  return storagePath
 }
 
-async function createProjectRecord({ id, name, description = '', isDefault = false }) {
-  const projectFolder = await ensureProjectFolders(id)
+function samePath(first, second) {
+  return resolve(first).toLowerCase() === resolve(second).toLowerCase()
+}
+
+function projectAssetFolder(project) {
+  return project.assetStoragePath ? resolve(project.assetStoragePath) : getProjectFolder(project.id)
+}
+
+async function getProjectAssetFolder(projectId) {
+  return projectAssetFolder(await readProject(projectId))
+}
+
+async function ensureProjectFolders(projectId, assetStoragePath = '') {
+  const projectFolder = getProjectFolder(projectId)
+  const assetRoot = assetStoragePath || projectFolder
+  await Promise.all([
+    mkdir(projectFolder, { recursive: true }),
+    mkdir(join(assetRoot, 'assets', 'source'), { recursive: true }),
+    mkdir(join(assetRoot, 'assets', 'runtime'), { recursive: true }),
+    mkdir(join(assetRoot, 'assets', 'references'), { recursive: true }),
+    mkdir(join(assetRoot, 'assets', 'versions'), { recursive: true }),
+    mkdir(join(assetRoot, 'frame-sequences'), { recursive: true }),
+    mkdir(join(projectFolder, 'evidence'), { recursive: true }),
+  ])
+  return { projectFolder, assetRoot }
+}
+
+async function createProjectRecord({ id, name, description = '', isDefault = false, assetStoragePath = '', assetStorageBasePath = '' }) {
+  const normalizedStoragePath = normalizeAssetStoragePath(assetStoragePath)
+  const normalizedBasePath = normalizeAssetStoragePath(assetStorageBasePath)
+  const { projectFolder } = await ensureProjectFolders(id, normalizedStoragePath)
   const now = new Date().toISOString()
   const record = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id,
     name: String(name).trim().slice(0, 60),
     description: String(description).trim().slice(0, 240),
+    assetStoragePath: normalizedStoragePath,
+    assetStorageBasePath: normalizedBasePath || normalizedStoragePath,
+    assetStorageMode: normalizedStoragePath ? 'external' : 'managed',
     createdAt: now,
     updatedAt: now,
     isDefault,
@@ -130,12 +214,19 @@ async function countImageAssets(folder) {
 }
 
 async function decorateProject(project) {
-  const projectFolder = getProjectFolder(project.id)
+  const assetRoot = projectAssetFolder(project)
   const [frameSequenceCount, imageAssetCount] = await Promise.all([
-    countDirectories(join(projectFolder, 'frame-sequences')),
-    countImageAssets(join(projectFolder, 'assets', 'source')),
+    countDirectories(join(assetRoot, 'frame-sequences')),
+    countImageAssets(join(assetRoot, 'assets', 'source')),
   ])
-  return { ...project, frameSequenceCount, imageAssetCount }
+  return {
+    ...project,
+    assetStoragePath: assetRoot,
+    assetStorageBasePath: project.assetStorageBasePath ? resolve(project.assetStorageBasePath) : assetRoot,
+    assetStorageMode: project.assetStoragePath ? 'external' : 'managed',
+    frameSequenceCount,
+    imageAssetCount,
+  }
 }
 
 async function listProjects() {
@@ -203,23 +294,73 @@ function cleanName(value) {
   return trimmed || '未命名序列'
 }
 
+function cleanFolderSegment(value) {
+  const cleaned = String(value || '')
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-')
+    .replace(/[. ]+$/g, '')
+    .slice(0, 48)
+  return cleaned || 'project'
+}
+
 function parseNumber(value, fallback) {
   const number = Number(value)
   return Number.isFinite(number) ? number : fallback
 }
 
+function normalizeUploadedFileName(value) {
+  const original = String(value || '').normalize('NFC')
+  if (!/[\u0080-\u00ff]/.test(original)) return original
+  const decoded = Buffer.from(original, 'latin1').toString('utf8')
+  return decoded.includes('\ufffd') ? original : decoded.normalize('NFC')
+}
+
+function defaultAnimationParameters() {
+  return {
+    model: 'seedance_2.0_fast（默认）',
+    duration: '5 秒（循环待机）',
+    aspectRatio: '1:1（适合宠物展示，角色居中）',
+    referenceImage: '',
+    actionContent: '',
+    style: '',
+    background: '简洁暖米色中性背景，无场景元素',
+    dialogueAudio: '无，纯动画 + 环境音',
+    prohibitions: '文字/水印、照片写实、攻击性动作、角色身份漂移、镜头旋转',
+  }
+}
+
+function normalizeAnimationParameters(value) {
+  const defaults = defaultAnimationParameters()
+  return Object.fromEntries(Object.entries(defaults).map(([key, fallback]) => [key, cleanCityText(value?.[key], 1200) || fallback]))
+}
+
+function defaultIdleAnimationParameters() {
+  return {
+    ...defaultAnimationParameters(),
+    actionContent: '温和呼吸起伏 → 缓慢眨眼 → 轻微摆尾或局部装饰摆动 → 回到起始姿态，循环流畅无跳变。',
+    style: '继承项目主视觉的材质、左上主光、柔和环境光与干净接地阴影。',
+  }
+}
+
+function normalizeIdleAnimationParameters(value) {
+  const defaults = defaultIdleAnimationParameters()
+  return Object.fromEntries(Object.entries(defaults).map(([key, fallback]) => [key, cleanCityText(value?.[key], 1200) || fallback]))
+}
+
 function toPublicManifest(manifest) {
-  const baseUrl = `/project-data/projects/${manifest.projectId}/frame-sequences/${manifest.id}`
+  const baseUrl = `/project-assets/${manifest.projectId}/frame-sequences/${manifest.id}`
   return {
     ...manifest,
-    sourceUrl: `${baseUrl}/${manifest.sourceFile}`,
+    sourceType: manifest.sourceType || (manifest.sourceFile ? 'video-to-frames' : 'uploaded-png-sequence'),
+    animationParameters: normalizeAnimationParameters(manifest.animationParameters),
+    sourceUrl: manifest.sourceFile ? `${baseUrl}/${manifest.sourceFile}` : '',
     manifestUrl: `${baseUrl}/manifest.json`,
     frameUrls: manifest.frames.map((frame) => `${baseUrl}/frames/${frame}`),
   }
 }
 
-async function loadManifests(projectId, moduleId) {
-  const sequencesRoot = join(getProjectFolder(projectId), 'frame-sequences')
+async function loadManifests(projectId, moduleId, petId = '') {
+  const sequencesRoot = join(await getProjectAssetFolder(projectId), 'frame-sequences')
   const entries = await readdir(sequencesRoot, { withFileTypes: true })
   const manifests = []
   for (const entry of entries) {
@@ -227,14 +368,14 @@ async function loadManifests(projectId, moduleId) {
     try {
       const raw = await readFile(join(sequencesRoot, entry.name, 'manifest.json'), 'utf8')
       const manifest = JSON.parse(raw)
-      if (!moduleId || manifest.moduleId === moduleId) manifests.push(toPublicManifest(manifest))
+      if ((!moduleId || manifest.moduleId === moduleId) && (!petId || manifest.petId === petId)) manifests.push(toPublicManifest(manifest))
     } catch { /* Ignore incomplete sequence folders. */ }
   }
   return manifests.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
 
 function toPublicCompletedSequence(manifest) {
-  const baseUrl = `/project-data/projects/${manifest.projectId}/assets/runtime/${manifest.moduleId}/${manifest.id}`
+  const baseUrl = `/project-assets/${manifest.projectId}/assets/runtime/${manifest.moduleId}/${manifest.id}`
   return {
     ...manifest,
     manifestUrl: `${baseUrl}/asset.json`,
@@ -243,7 +384,7 @@ function toPublicCompletedSequence(manifest) {
 }
 
 async function loadCompletedSequences(projectId, moduleId) {
-  const moduleRoot = join(getProjectFolder(projectId), 'assets', 'runtime', moduleId)
+  const moduleRoot = join(await getProjectAssetFolder(projectId), 'assets', 'runtime', moduleId)
   let entries = []
   try { entries = await readdir(moduleRoot, { withFileTypes: true }) } catch { return [] }
   const assets = []
@@ -258,7 +399,7 @@ async function loadCompletedSequences(projectId, moduleId) {
 }
 
 async function loadImageAssets(projectId, moduleId) {
-  const sourceRoot = join(getProjectFolder(projectId), 'assets', 'source')
+  const sourceRoot = join(await getProjectAssetFolder(projectId), 'assets', 'source')
   const assets = []
   let moduleFolders = []
   try { moduleFolders = await readdir(sourceRoot, { withFileTypes: true }) } catch { return assets }
@@ -271,7 +412,8 @@ async function loadImageAssets(projectId, moduleId) {
         const manifest = JSON.parse(await readFile(join(modulePath, assetFolder.name, 'asset.json'), 'utf8'))
         assets.push({
           ...manifest,
-          imageUrl: `/project-data/projects/${projectId}/assets/source/${moduleFolder.name}/${assetFolder.name}/${manifest.fileName}`,
+          originalName: normalizeUploadedFileName(manifest.originalName),
+          imageUrl: `/project-assets/${projectId}/assets/source/${moduleFolder.name}/${assetFolder.name}/${manifest.fileName}`,
         })
       } catch { /* Ignore incomplete image folders. */ }
     }
@@ -284,7 +426,7 @@ const assetRelationTypes = new Set(['character', 'skill', 'level', 'ui', 'scene'
 const dependencyGraph = {
   'gameplay-design': ['detailed-gameplay-design', 'main-visual-design', 'story-level-design'],
   'detailed-gameplay-design': ['main-visual-design', 'character-design', 'character-motion', 'skill-design', 'skill-vfx', 'game-ui', 'story-level-design', 'background-design', 'map-elements'],
-  'main-visual-design': ['character-design', 'character-motion', 'skill-design', 'skill-vfx', 'game-ui', 'story-level-design', 'background-design', 'map-elements'],
+  'main-visual-design': ['character-design', 'character-motion', 'skill-design', 'skill-vfx', 'game-ui', 'story-level-design', 'background-design', 'map-elements', 'pet-content'],
   'character-design': ['character-motion', 'skill-design'],
   'character-motion': ['skill-vfx'],
   'skill-design': ['skill-vfx'],
@@ -304,6 +446,483 @@ async function writeJsonAtomic(filePath, value) {
   const tempPath = `${filePath}.${randomUUID().slice(0, 8)}.tmp`
   await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
   await rename(tempPath, filePath)
+}
+
+const projectPlanStatuses = new Set(['not_started', 'in_progress', 'blocked', 'completed'])
+
+function projectPlanFile(projectId) {
+  return join(getProjectFolder(projectId), 'project-plan.json')
+}
+
+function defaultProjectPlan(projectId) {
+  return { schemaVersion: 1, projectId, updatedAt: '', items: [] }
+}
+
+function normalizeProjectPlan(projectId, value) {
+  const items = Array.isArray(value?.items) ? value.items : []
+  if (items.length > 300) throw new Error('项目计划最多包含 300 个计划项。')
+  const seenIds = new Set()
+  const normalizedItems = items.map((item) => {
+    let id = String(item?.id || '').trim().slice(0, 80) || `plan-${Date.now()}-${randomUUID().slice(0, 6)}`
+    if (seenIds.has(id)) id = `${id}-${randomUUID().slice(0, 6)}`
+    seenIds.add(id)
+    const cleanDate = (date) => /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? String(date) : ''
+    const progress = Math.min(100, Math.max(0, Math.round(parseNumber(item?.progress, 0))))
+    return {
+      id,
+      phaseName: String(item?.phaseName || '未分组阶段').trim().slice(0, 60) || '未分组阶段',
+      phaseOrder: Math.min(999, Math.max(1, Math.round(parseNumber(item?.phaseOrder, 1)))),
+      title: String(item?.title || '').trim().slice(0, 120),
+      description: String(item?.description || '').trim().slice(0, 1000),
+      status: projectPlanStatuses.has(item?.status) ? item.status : 'not_started',
+      progress,
+      owner: String(item?.owner || '').trim().slice(0, 60),
+      startDate: cleanDate(item?.startDate),
+      dueDate: cleanDate(item?.dueDate),
+      moduleId: String(item?.moduleId || '').trim().slice(0, 80),
+      acceptance: String(item?.acceptance || '').trim().slice(0, 1000),
+      updatedAt: new Date().toISOString(),
+    }
+  })
+  if (normalizedItems.some((item) => !item.title)) throw new Error('每个计划项都必须填写标题。')
+  return { schemaVersion: 1, projectId, updatedAt: new Date().toISOString(), items: normalizedItems }
+}
+
+const mainVisualDeliverableStatuses = new Set(['not_started', 'in_progress', 'in_review', 'approved', 'blocked'])
+const mainVisualRightsStatuses = new Set(['pending', 'cleared', 'not_applicable'])
+
+function mainVisualDeliverablesFile(projectId) {
+  return join(getProjectFolder(projectId), 'main-visual-deliverables.json')
+}
+
+function defaultMainVisualDeliverables(projectId) {
+  const definitions = [
+    ['creative-brief', '定义', '主视觉创意简报', 'text', '统一记录世界观、目标受众、核心体验、平台、情绪和禁止方向。', '内容与玩法设计和详细玩法设计一致；范围、受众、平台和禁止项均有明确结论。'],
+    ['style-exploration-boards', '探索', '风格探索板（至少 3 组）', 'image', '对构图、色彩、材质、光照和细节密度进行可比较的风格探索。', '至少 3 组方案并排比较；记录筛选理由、淘汰原因和最终选择。'],
+    ['gameplay-anchor', '核心图像', '游戏镜头主视觉锚点图', 'image', '在实际游戏镜头下验证角色、场景、路线、线索和交互目标的可读性。', '使用目标宽高比和固定镜头；角色、路线、线索与宝箱层级清楚，并通过实际缩放检查。'],
+    ['key-visual', '核心图像', '展示性关键视觉图', 'image', '用于宣传与项目展示，同时保持与游戏内视觉一致。', '角色身份、材质、光向和色板与游戏镜头锚点一致；常见裁切比例下核心主体完整。'],
+    ['visual-bible', '视觉系统', '项目视觉圣经', 'mixed', '记录全项目视觉固定规则、允许变化、禁止元素、例外审批和版本影响范围；技术接入规则只引用技术美术规范。', '下游模块无需重新猜测风格；视觉圣经不重复维护路径、命名、导入、层级编号、性能预算或运行时清单。'],
+    ['color-system', '视觉系统', '项目色彩与功能色系统', 'mixed', '定义主色、辅色、强调色、中性色以及交互和功能色优先级。', '提供色值、使用比例、背景适配、对比度和主线／隐藏／交互目标的颜色层级。'],
+    ['shape-language', '视觉系统', '形状、轮廓与装饰语言', 'mixed', '定义角色、建筑、道具、图标的轮廓倾向、圆角、边缘和装饰母题。', '提供可复用的正反例；不同模块并排时保持同一形状语言且不损害可读性。'],
+    ['material-lighting-samples', '渲染系统', '材质、光照、阴影与后期样张', 'mixed', '锁定表面质感、纹理密度、主光方向、环境光、接地阴影和后期色调。', '至少覆盖角色、建筑、地面、金属、布料和魔法效果；明暗场景下均保持统一且可读。'],
+    ['module-adaptation-samples', '下游验证', '下游模块适配样张', 'mixed', '验证主视觉规则能够稳定扩展到角色、场景、地图元素、交互反馈和用户界面。', '至少包含角色、场景、交互物和界面四类样张；并排检查色板、材质、轮廓、镜头和细节密度。'],
+    ['final-approval', '批准归档', '主视觉最终批准与影响记录', 'text', '登记批准版本、权利结论和受影响模块。', '全部前置交付物已批准；主视觉正式版本可追溯，权利状态明确，下游影响与例外均已记录。'],
+  ]
+  return {
+    schemaVersion: 2,
+    projectId,
+    updatedAt: '',
+    items: definitions.map(([id, category, title, contentKind, purpose, acceptance], index) => ({
+      id,
+      order: index + 1,
+      category,
+      title,
+      contentKind,
+      purpose,
+      acceptance,
+      contentText: '',
+      imageAssetIds: [],
+      status: 'not_started',
+      owner: 'weiyuchen',
+      version: 'v001',
+      rightsStatus: 'not_applicable',
+      updatedAt: '',
+    })),
+  }
+}
+
+function normalizeMainVisualDeliverables(projectId, value, validationItemId = '') {
+  const template = defaultMainVisualDeliverables(projectId)
+  const incomingItems = Array.isArray(value?.items) ? value.items : []
+  if (incomingItems.length > 30) throw new Error('主视觉交付物记录最多包含 30 项。')
+  const incomingById = new Map(incomingItems.map((item) => [String(item?.id || ''), item]))
+  const now = new Date().toISOString()
+  const items = template.items.map((definition) => {
+    const item = incomingById.get(definition.id) || definition
+    const status = mainVisualDeliverableStatuses.has(item?.status) ? item.status : 'not_started'
+    const rightsStatus = mainVisualRightsStatuses.has(item?.rightsStatus) ? item.rightsStatus : 'not_applicable'
+    const version = String(item?.version || '').trim().slice(0, 60) || 'v001'
+    const contentText = String(item?.contentText || '').trim().slice(0, 20000)
+    const imageAssetIds = [...new Set((Array.isArray(item?.imageAssetIds) ? item.imageAssetIds : [])
+      .map((id) => String(id || '').trim())
+      .filter((id) => /^asset-\d{13}-[a-f0-9]{8}$/i.test(id)))]
+      .slice(0, 30)
+    const shouldValidate = definition.id === validationItemId
+    if (shouldValidate && status === 'approved' && (!version || rightsStatus === 'pending')) {
+      throw new Error(`“${definition.title}”标记为已批准前，请填写版本和权利结论。`)
+    }
+    return {
+      ...definition,
+      contentText,
+      imageAssetIds,
+      status,
+      owner: String(item?.owner || '').trim().slice(0, 80) || 'weiyuchen',
+      version,
+      rightsStatus,
+      updatedAt: String(item?.updatedAt || '').trim() || now,
+    }
+  })
+  return { schemaVersion: 2, projectId, updatedAt: now, items }
+}
+
+const characterSettingStates = new Set(['draft', 'review', 'locked'])
+const characterPriorities = new Set(['P0', 'P1', 'P2'])
+
+function characterSettingSheetsFile(projectId) {
+  return join(getProjectFolder(projectId), 'character-setting-sheets.json')
+}
+
+function defaultCharacterSettingSheets(projectId) {
+  return { schemaVersion: 1, projectId, updatedAt: '', characters: [] }
+}
+
+function cleanCharacterSettingText(value, maxLength = 1200) {
+  return String(value || '').trim().slice(0, maxLength)
+}
+
+function cleanCharacterSettingId(value, fallback) {
+  const id = cleanCharacterSettingText(value, 80).toLowerCase().replace(/[^a-z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '')
+  return id || fallback
+}
+
+function normalizeCharacterSettingSheets(projectId, value) {
+  const incoming = Array.isArray(value?.characters) ? value.characters : []
+  if (incoming.length > 100) throw new Error('角色设定表最多包含 100 个角色。')
+  const seenIds = new Set()
+  const now = new Date().toISOString()
+  const characters = incoming.map((character, index) => {
+    const id = cleanCharacterSettingId(character?.id, `character_${index + 1}`)
+    if (seenIds.has(id)) throw new Error(`角色 ID 重复：${id}`)
+    seenIds.add(id)
+    const displayName = cleanCharacterSettingText(character?.displayName, 100)
+    if (!displayName) throw new Error(`角色 ${id} 必须填写名称。`)
+    const referenceAssetIds = [...new Set((Array.isArray(character?.referenceAssetIds) ? character.referenceAssetIds : [])
+      .map((assetId) => cleanCharacterSettingText(assetId, 80))
+      .filter((assetId) => /^asset-\d{13}-[a-f0-9]{8}$/i.test(assetId)))]
+      .slice(0, 30)
+    return {
+      id,
+      displayName,
+      roleType: cleanCharacterSettingText(character?.roleType, 60),
+      priority: characterPriorities.has(character?.priority) ? character.priority : 'P1',
+      state: characterSettingStates.has(character?.state) ? character.state : 'draft',
+      narrativeRole: cleanCharacterSettingText(character?.narrativeRole, 800),
+      ageAndProportion: cleanCharacterSettingText(character?.ageAndProportion, 800),
+      identityAnchors: cleanCharacterSettingText(character?.identityAnchors, 1200),
+      silhouetteAndFeatures: cleanCharacterSettingText(character?.silhouetteAndFeatures, 1000),
+      outfitAndAccessories: cleanCharacterSettingText(character?.outfitAndAccessories, 1200),
+      paletteAndMaterials: cleanCharacterSettingText(character?.paletteAndMaterials, 1000),
+      requiredViews: cleanCharacterSettingText(character?.requiredViews, 600),
+      expressionsAndPoses: cleanCharacterSettingText(character?.expressionsAndPoses, 1000),
+      motionHandoff: cleanCharacterSettingText(character?.motionHandoff, 1200),
+      referenceAssetIds,
+      version: cleanCharacterSettingText(character?.version, 60) || 'v001',
+      updatedAt: cleanCharacterSettingText(character?.updatedAt, 60) || now,
+    }
+  })
+  return { schemaVersion: 1, projectId, updatedAt: now, characters }
+}
+
+const cityContentStatuses = new Set(['planning', 'production', 'review', 'ready', 'released'])
+const cityItemStatuses = new Set(['planned', 'in_progress', 'ready'])
+const chestTypes = new Set(['main', 'hidden'])
+const chestWordRoles = new Set(['new', 'review', 'distractor'])
+const chestGamePurposes = new Set(['teach', 'review', 'final'])
+const petRarities = new Set(['common', 'rare'])
+const cityMusicScopes = new Set(['city', 'area'])
+const cityMusicTriggers = new Set(['default', 'exploration', 'chest', 'completion'])
+
+function petContentFile(projectId) {
+  return join(getProjectFolder(projectId), 'pet-content.json')
+}
+
+function defaultPetContent(projectId) {
+  return { schemaVersion: 1, projectId, updatedAt: '', pets: [] }
+}
+
+async function assertPetExists(projectId, petId) {
+  const content = existsSync(petContentFile(projectId))
+    ? normalizePetContent(projectId, JSON.parse(await readFile(petContentFile(projectId), 'utf8')))
+    : defaultPetContent(projectId)
+  if (!content.pets.some((pet) => pet.id === petId)) throw new Error('当前宠物不存在，请先保存宠物内容。')
+}
+
+function gameContentFile(projectId) {
+  return join(getProjectFolder(projectId), 'game-content.json')
+}
+
+function defaultGameContent(projectId) {
+  return { schemaVersion: 1, projectId, updatedAt: '', games: [] }
+}
+
+function cityContentFile(projectId) {
+  return join(getProjectFolder(projectId), 'city-content.json')
+}
+
+function defaultCityContent(projectId) {
+  return { schemaVersion: 6, projectId, updatedAt: '', cities: [] }
+}
+
+function cleanCityText(value, maxLength = 120) {
+  return String(value || '').trim().slice(0, maxLength)
+}
+
+function cleanCityId(value, fallback) {
+  const id = cleanCityText(value, 80).toLowerCase().replace(/[^a-z0-9_-]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '')
+  return id || fallback
+}
+
+function cleanCityStringList(value, maxItems = 100, maxLength = 80) {
+  if (!Array.isArray(value)) return []
+  return value.map((item) => cleanCityText(item, maxLength)).filter(Boolean).slice(0, maxItems)
+}
+
+function normalizePetContent(projectId, value) {
+  const pets = Array.isArray(value?.pets) ? value.pets : []
+  if (pets.length > 300) throw new Error('宠物内容最多包含 300 条记录。')
+  const seenIds = new Set()
+  const normalizedPets = pets.map((pet, index) => {
+    let id = cleanCityId(pet?.id, `pet_${index + 1}`)
+    if (seenIds.has(id)) id = `${id}_${index + 1}`
+    seenIds.add(id)
+    const imageAssetIds = [...new Set([
+      ...cleanCityStringList(pet?.imageAssetIds, 12),
+      cleanCityText(pet?.assetId, 80),
+    ].filter((assetId) => /^asset-\d{13}-[a-f0-9]{8}$/i.test(assetId)))]
+    const preferredPrimaryImageId = cleanCityText(pet?.primaryImageAssetId, 80)
+    const primaryImageAssetId = imageAssetIds.includes(preferredPrimaryImageId) ? preferredPrimaryImageId : imageAssetIds[0] || ''
+    return {
+      id,
+      spanishName: cleanCityText(pet?.spanishName, 100),
+      chineseName: cleanCityText(pet?.chineseName, 100),
+      rarity: petRarities.has(pet?.rarity) ? pet.rarity : 'common',
+      designSource: cleanCityText(pet?.designSource ?? pet?.description, 600),
+      appearanceDesign: cleanCityText(pet?.appearanceDesign, 600),
+      idleAnimationParameters: normalizeIdleAnimationParameters(pet?.idleAnimationParameters),
+      imageAssetIds,
+      primaryImageAssetId,
+      assetId: primaryImageAssetId,
+      status: cityItemStatuses.has(pet?.status) ? pet.status : 'planned',
+      updatedAt: new Date().toISOString(),
+    }
+  })
+  if (normalizedPets.some((pet) => !pet.spanishName || !pet.chineseName)) throw new Error('每条宠物内容都必须填写西语名和中文名。')
+  if (normalizedPets.some((pet) => pet.status === 'ready' && pet.imageAssetIds.length === 0)) throw new Error('宠物标记为已就绪前，至少需要关联一张设计形象图。')
+  return { schemaVersion: 1, projectId, updatedAt: new Date().toISOString(), pets: normalizedPets }
+}
+
+function normalizeGameContent(projectId, value) {
+  const games = Array.isArray(value?.games) ? value.games : []
+  if (games.length > 300) throw new Error('游戏内容最多包含 300 条记录。')
+  const seenIds = new Set()
+  const normalizedGames = games.map((game, index) => {
+    let id = cleanCityId(game?.id, `game_${index + 1}`)
+    if (seenIds.has(id)) id = `${id}_${index + 1}`
+    seenIds.add(id)
+    return {
+      id,
+      name: cleanCityText(game?.name, 100),
+      category: cleanCityText(game?.category, 80),
+      description: cleanCityText(game?.description, 600),
+      ruleReference: cleanCityText(game?.ruleReference, 120),
+      assetId: cleanCityText(game?.assetId, 80),
+      status: cityItemStatuses.has(game?.status) ? game.status : 'planned',
+      updatedAt: new Date().toISOString(),
+    }
+  })
+  if (normalizedGames.some((game) => !game.name || !game.category)) throw new Error('每条游戏内容都必须填写名称和类型。')
+  return { schemaVersion: 1, projectId, updatedAt: new Date().toISOString(), games: normalizedGames }
+}
+
+function normalizeCityContent(projectId, value) {
+  const cities = Array.isArray(value?.cities) ? value.cities : []
+  if (cities.length > 100) throw new Error('城市内容最多包含 100 座城市。')
+  const seenCityIds = new Set()
+  const normalizedCities = cities.map((city, cityIndex) => {
+    let id = cleanCityId(city?.id, `city_${cityIndex + 1}`)
+    if (seenCityIds.has(id)) id = `${id}_${cityIndex + 1}`
+    seenCityIds.add(id)
+    const normalizeItems = (items, limit, mapItem) => (Array.isArray(items) ? items : []).slice(0, limit).map(mapItem)
+    const areas = normalizeItems(city?.areas, 50, (area, index) => ({
+      id: cleanCityId(area?.id, `${id}_area_${index + 1}`),
+      name: cleanCityText(area?.name, 80),
+      theme: cleanCityText(area?.theme, 120),
+      description: cleanCityText(area?.description, 600),
+      order: Math.min(999, Math.max(1, Math.round(parseNumber(area?.order, index + 1)))),
+      status: cityItemStatuses.has(area?.status) ? area.status : 'planned',
+    }))
+    const chests = normalizeItems(city?.chests, 300, (chest, index) => {
+      const type = chestTypes.has(chest?.type) ? chest.type : 'main'
+      return {
+        id: cleanCityId(chest?.id, `${id}_chest_${index + 1}`),
+        name: cleanCityText(chest?.name, 100),
+        areaId: cleanCityText(chest?.areaId, 80),
+        type,
+        culturalNote: cleanCityText(chest?.culturalNote, 600),
+        status: cityItemStatuses.has(chest?.status) ? chest.status : 'planned',
+      }
+    })
+    const vocabulary = normalizeItems(city?.vocabulary, 6000, (word, index) => ({
+      id: cleanCityId(word?.id, `${id}_word_${index + 1}`),
+      spanish: cleanCityText(word?.spanish, 100),
+      english: cleanCityText(word?.english, 100),
+      chinese: cleanCityText(word?.chinese, 100),
+      category: cleanCityText(word?.category, 80),
+      areaId: cleanCityText(word?.areaId, 80),
+      status: cityItemStatuses.has(word?.status) ? word.status : 'planned',
+    }))
+    const chestTypeFor = (value) => chestTypes.has(value) ? value : chests.find((chest) => chest.id === cleanCityText(value, 80))?.type || 'main'
+    const games = normalizeItems(city?.games, 300, (game, index) => ({
+      id: cleanCityId(game?.id, `${id}_game_${index + 1}`),
+      gameContentId: cleanCityText(game?.gameContentId, 80),
+      chestType: chestTypeFor(game?.chestType || game?.chestId),
+      order: Math.min(999, Math.max(1, Math.round(parseNumber(game?.order, index + 1)))),
+      purpose: chestGamePurposes.has(game?.purpose) ? game.purpose : 'teach',
+      questionCount: Math.min(20, Math.max(1, Math.round(parseNumber(game?.questionCount, 4)))),
+      fallbackGameContentId: cleanCityText(game?.fallbackGameContentId, 80),
+      status: cityItemStatuses.has(game?.status) ? game.status : 'planned',
+    }))
+    const pets = normalizeItems(city?.pets, 300, (pet, index) => ({
+      id: cleanCityId(pet?.id, `${id}_pet_drop_${index + 1}`),
+      petContentId: cleanCityText(pet?.petContentId, 80),
+      chestType: chestTypeFor(pet?.chestType || pet?.chestId),
+      weight: Math.round(Math.min(100, Math.max(0, parseNumber(pet?.weight, pet?.dropRate || 0))) * 100) / 100,
+      enabled: pet?.enabled !== false,
+      status: cityItemStatuses.has(pet?.status) ? pet.status : 'planned',
+    }))
+    const legacyWordLinks = []
+    for (const sourceChest of Array.isArray(city?.chests) ? city.chests : []) {
+      const chestId = cleanCityText(sourceChest?.id, 80)
+      const chestType = chests.find((chest) => chest.id === chestId)?.type || 'main'
+      for (const wordId of cleanCityStringList(sourceChest?.wordIds, 12)) legacyWordLinks.push({ chestId, wordId, role: chestType === 'main' ? 'new' : 'review' })
+    }
+    for (const sourceWord of Array.isArray(city?.vocabulary) ? city.vocabulary : []) {
+      const chestId = cleanCityText(sourceWord?.chestId, 80)
+      if (chestId) legacyWordLinks.push({ chestId, wordId: cleanCityText(sourceWord?.id, 80), role: 'new' })
+    }
+    const sourceWordLinks = Array.isArray(city?.gameWordLinks) ? city.gameWordLinks : Array.isArray(city?.chestWordLinks) ? city.chestWordLinks : legacyWordLinks
+    const seenWordPairs = new Set()
+    const gameWordLinks = normalizeItems(sourceWordLinks, 12000, (link, index) => {
+      const gameId = cleanCityText(link?.gameId, 80) || games.find((game) => game.chestType === chestTypeFor(link?.chestType || link?.chestId))?.id || ''
+      const wordId = cleanCityText(link?.wordId, 80)
+      const pairKey = `${gameId}:${wordId}`
+      if (!gameId || !wordId || seenWordPairs.has(pairKey)) return null
+      seenWordPairs.add(pairKey)
+      return {
+        id: cleanCityId(link?.id, `${id}_game_word_${index + 1}`),
+        gameId,
+        wordId,
+        role: chestWordRoles.has(link?.role) ? link.role : 'review',
+        order: Math.min(999, Math.max(1, Math.round(parseNumber(link?.order, index + 1)))),
+        status: cityItemStatuses.has(link?.status) ? link.status : 'planned',
+      }
+    }).filter(Boolean)
+    const backgroundMusic = normalizeItems(city?.backgroundMusic, 1, (music, index) => ({
+      id: cleanCityId(music?.id, `${id}_bgm_${index + 1}`),
+      name: cleanCityText(music?.name, 100),
+      resourceRef: cleanCityText(music?.resourceRef, 240),
+      audioUrl: cleanCityText(music?.audioUrl, 300),
+      originalName: cleanCityText(music?.originalName, 180),
+      scope: 'city',
+      areaId: '',
+      trigger: 'default',
+      loop: music?.loop !== false,
+      volume: Math.round(Math.min(100, Math.max(0, parseNumber(music?.volume, 70)))),
+      fadeSeconds: Math.round(Math.min(30, Math.max(0, parseNumber(music?.fadeSeconds, 1))) * 10) / 10,
+      status: cityItemStatuses.has(music?.status) ? music.status : 'planned',
+    }))
+    return {
+      id,
+      name: cleanCityText(city?.name, 80),
+      spanishName: cleanCityText(city?.spanishName, 80),
+      status: cityContentStatuses.has(city?.status) ? city.status : 'planning',
+      difficulty: Math.min(5, Math.max(1, Math.round(parseNumber(city?.difficulty, 1)))),
+      overview: cleanCityText(city?.overview, 800),
+      verticalSlice: cleanCityText(city?.verticalSlice, 800),
+      plannedCounts: {
+        areas: Math.min(99, Math.max(0, Math.round(parseNumber(city?.plannedCounts?.areas, areas.length)))),
+        chests: Math.min(999, Math.max(0, Math.round(parseNumber(city?.plannedCounts?.chests, chests.length)))),
+        vocabulary: Math.min(9999, Math.max(0, Math.round(parseNumber(city?.plannedCounts?.vocabulary, vocabulary.length)))),
+        pets: Math.min(999, Math.max(0, Math.round(parseNumber(city?.plannedCounts?.pets, pets.length)))),
+        games: Math.min(999, Math.max(0, Math.round(parseNumber(city?.plannedCounts?.games, games.length)))),
+      },
+      areas,
+      chests,
+      vocabulary,
+      gameWordLinks,
+      pets,
+      games,
+      backgroundMusic,
+      updatedAt: new Date().toISOString(),
+    }
+  })
+  if (normalizedCities.some((city) => !city.name)) throw new Error('每座城市都必须填写城市名称。')
+  for (const city of normalizedCities) {
+    const ensureUniqueIds = (items, label) => {
+      const ids = items.map((item) => item.id)
+      if (new Set(ids).size !== ids.length) throw new Error(`城市“${city.name}”存在重复的${label} ID。`)
+    }
+    ensureUniqueIds(city.areas, '片区')
+    ensureUniqueIds(city.chests, '宝箱')
+    ensureUniqueIds(city.vocabulary, '词汇')
+    ensureUniqueIds(city.gameWordLinks, '游戏词汇关联')
+    ensureUniqueIds(city.pets, '宝箱宠物投放')
+    ensureUniqueIds(city.games, '游戏投放')
+    ensureUniqueIds(city.backgroundMusic, '背景音乐配置')
+    const areaIds = new Set(city.areas.map((area) => area.id))
+    const wordIds = new Set(city.vocabulary.map((word) => word.id))
+    const gameIds = new Set(city.games.map((game) => game.id))
+    const activeChestTypes = new Set(city.chests.map((chest) => chest.type))
+    if (city.chests.some((chest) => !areaIds.has(chest.areaId))) throw new Error(`城市“${city.name}”存在未关联有效片区的宝箱。`)
+    if (city.vocabulary.some((word) => !word.spanish || !word.english || !word.chinese)) throw new Error(`城市“${city.name}”的每个核心词汇都必须填写西语、英文和中文。`)
+    if (new Set(city.vocabulary.map((word) => word.spanish.toLocaleLowerCase())).size !== city.vocabulary.length) throw new Error(`城市“${city.name}”存在重复的西语核心词汇。`)
+    if (city.vocabulary.some((word) => word.areaId && !areaIds.has(word.areaId))) throw new Error(`城市“${city.name}”存在未关联有效片区的词汇。`)
+    if (city.pets.some((pet) => !chestTypes.has(pet.chestType))) throw new Error(`城市“${city.name}”存在未关联有效宝箱类型的宠物投放。`)
+    if (city.pets.some((pet) => !activeChestTypes.has(pet.chestType))) throw new Error(`城市“${city.name}”的宠物投放引用了当前城市尚未出现的宝箱类型。`)
+    if (city.gameWordLinks.some((link) => !gameIds.has(link.gameId) || !wordIds.has(link.wordId))) throw new Error(`城市“${city.name}”存在失效的游戏—词汇引用。`)
+    if (city.games.some((game) => !chestTypes.has(game.chestType))) throw new Error(`城市“${city.name}”存在未关联有效宝箱类型的游戏投放。`)
+    if (city.games.some((game) => !activeChestTypes.has(game.chestType))) throw new Error(`城市“${city.name}”的游戏投放引用了当前城市尚未出现的宝箱类型。`)
+    if (new Set(city.pets.map((pet) => `${pet.chestType}:${pet.petContentId}`)).size !== city.pets.length) throw new Error(`城市“${city.name}”同一宝箱类型重复配置了同一只宠物。`)
+    if (new Set(city.games.map((game) => `${game.chestType}:${game.gameContentId}`)).size !== city.games.length) throw new Error(`城市“${city.name}”同一宝箱类型重复配置了同一个游戏。`)
+    if (city.backgroundMusic.some((music) => !music.name || !music.resourceRef)) throw new Error(`城市“${city.name}”存在未填写音轨名称或音频资源的背景音乐配置。`)
+    if (city.status === 'ready' || city.status === 'released') {
+      for (const chestType of chestTypes) {
+        const entries = city.pets.filter((pet) => pet.enabled && pet.chestType === chestType)
+        if (!entries.length) continue
+        const total = Math.round(entries.reduce((sum, pet) => sum + pet.weight, 0) * 100) / 100
+        if (total !== 100) throw new Error(`城市“${city.name}”的${chestType === 'main' ? '主线' : '隐藏'}宝箱宠物掉落概率合计为 ${total}%，可接入或发布前必须为 100%。`)
+      }
+      for (const chestType of new Set(city.chests.map((chest) => chest.type))) {
+        const gameIdsForType = city.games.filter((game) => game.chestType === chestType).map((game) => game.id)
+        const links = city.gameWordLinks.filter((link) => gameIdsForType.includes(link.gameId))
+        const newWordCount = links.filter((link) => link.role === 'new').length
+        if (chestType === 'main' && (newWordCount < 2 || newWordCount > 4)) throw new Error(`主线宝箱类型必须配置 2–4 个新词。`)
+        if (chestType !== 'main' && newWordCount > 0) throw new Error('隐藏宝箱类型不能引入新词，只能复现已学词。')
+        if (!gameIdsForType.length) throw new Error(`${chestType === 'main' ? '主线' : '隐藏'}宝箱类型尚未配置语言小游戏。`)
+      }
+    }
+  }
+  return { schemaVersion: 6, projectId, updatedAt: new Date().toISOString(), cities: normalizedCities }
+}
+
+async function validateCityCatalogReferences(projectId, content) {
+  const petContent = existsSync(petContentFile(projectId)) ? normalizePetContent(projectId, JSON.parse(await readFile(petContentFile(projectId), 'utf8'))) : defaultPetContent(projectId)
+  const gameContent = existsSync(gameContentFile(projectId)) ? normalizeGameContent(projectId, JSON.parse(await readFile(gameContentFile(projectId), 'utf8'))) : defaultGameContent(projectId)
+  const petById = new Map(petContent.pets.map((pet) => [pet.id, pet]))
+  const gameById = new Map(gameContent.games.map((game) => [game.id, game]))
+  for (const city of content.cities) {
+    for (const entry of city.pets) {
+      const pet = petById.get(entry.petContentId)
+      if (!pet) throw new Error(`城市“${city.name}”引用了不存在的宠物“${entry.petContentId}”。`)
+      if ((city.status === 'ready' || city.status === 'released') && pet.status !== 'ready') throw new Error(`宠物“${pet.chineseName}”尚未就绪，城市不能标记为可接入或已发布。`)
+    }
+    for (const link of city.games) {
+      const game = gameById.get(link.gameContentId)
+      if (!game) throw new Error(`城市“${city.name}”引用了不存在的游戏“${link.gameContentId}”。`)
+      if (link.fallbackGameContentId && !gameById.has(link.fallbackGameContentId)) throw new Error(`游戏投放“${link.id}”的降级游戏不存在。`)
+      if ((city.status === 'ready' || city.status === 'released') && game.status !== 'ready') throw new Error(`游戏“${game.name}”尚未就绪，城市不能标记为可接入或已发布。`)
+    }
+  }
 }
 
 function defaultTechnicalStandards() {
@@ -336,6 +955,13 @@ function defaultTechnicalStandards() {
       uiRoot: 'res://art/ui',
       textureFilter: 'Nearest（像素素材）/ Linear（绘制素材）',
       prefabRule: '一个可复用运行时资产对应一个 .tscn 场景；外部依赖使用相对 res:// 路径。',
+      aiHandoffStandardId: 'TA-IMG-001',
+      aiResponsibilityRule: '模型、版本、seed、参考图权重、steps、CFG 与批次变量由主视觉或对应美术模块的结构化 Prompt 管理；技术美术规范只定义可入库和运行时接入条件。',
+      aiCanvasFormatRule: '概念源图的画布比例与生成尺寸由主视觉定义；进入引擎前必须满足项目允许格式、尺寸上限、色彩空间、纹理上限与平台压缩规则。',
+      aiAlphaDeliveryRule: '整幅概念图可不含 Alpha；独立角色、道具、特效和 UI 资产按用途提供透明交付，并在运行时资产清单声明 Alpha 与混合方式。',
+      aiImportHandoffRule: 'AI 源图先进入 source 目录；审核、裁切、拆分、缩放和清边后生成 runtime 派生资产。概念图不得直接作为运行时纹理。',
+      aiManifestEvidenceRule: '资产清单登记稳定 ID、源图与运行时路径、版本、尺寸、色彩空间、Alpha、过滤、压缩和图集信息；模型、seed、参考图与人工修改记录保存在对应生成证据中。',
+      aiPromptReferenceRule: '主视觉和下游模块通过 TA-IMG-001 引用当前接入规范，不复制运行时参数；规范版本变化后重新校验受影响资产。',
     },
     materials: {
       materialPrefix: 'mat_',
@@ -540,7 +1166,8 @@ async function ensureAssetRegistry(projectId) {
 }
 
 async function registerManifestAsset(projectId, manifest, artifact, initialStatus) {
-  const [registry, standards] = await Promise.all([ensureAssetRegistry(projectId), loadTechnicalStandards(projectId)])
+  const registry = await ensureAssetRegistry(projectId)
+  const standards = await loadTechnicalStandards(projectId)
   if (!registry.assets.some((asset) => asset.id === manifest.id)) {
     registry.assets.push(makeAssetRecord(manifest, artifact, initialStatus, standards))
     await saveRegistry(projectId, registry)
@@ -610,13 +1237,35 @@ app.get('/api/projects', async (_request, response) => {
   response.json(await listProjects())
 })
 
+app.post('/api/system/select-folder', async (_request, response) => {
+  try {
+    const selectedPath = await selectFolderWithSystemDialog()
+    response.json(selectedPath ? { path: normalizeAssetStoragePath(selectedPath), cancelled: false } : { path: '', cancelled: true })
+  } catch (error) {
+    response.status(500).json({ error: error instanceof Error ? error.message : '无法选择素材目录。' })
+  }
+})
+
 app.post('/api/projects', async (request, response) => {
-  const name = String(request.body.name || '').trim()
-  if (!name) return response.status(400).json({ error: '请输入项目名称。' })
-  if (name.length > 60) return response.status(400).json({ error: '项目名称不能超过 60 个字符。' })
-  const id = `project-${Date.now()}-${randomUUID().slice(0, 8)}`
-  const project = await createProjectRecord({ id, name, description: request.body.description })
-  response.status(201).json(await decorateProject(project))
+  try {
+    const name = String(request.body.name || '').trim()
+    if (!name) throw new Error('请输入项目名称。')
+    if (name.length > 60) throw new Error('项目名称不能超过 60 个字符。')
+    const assetStorageBasePath = normalizeAssetStoragePath(request.body.assetStorageBasePath || request.body.assetStoragePath)
+    if (!assetStorageBasePath) throw new Error('请先选择此项目的美术素材存放位置。')
+    const baseStats = await stat(assetStorageBasePath)
+    if (!baseStats.isDirectory()) throw new Error('所选素材存放位置不是文件夹。')
+    const id = `project-${Date.now()}-${randomUUID().slice(0, 8)}`
+    const assetStoragePath = join(assetStorageBasePath, 'ArtFlow', `${cleanFolderSegment(name)}-${id.slice(-8)}`)
+    const existingProjects = await listProjects()
+    if (existingProjects.some((project) => samePath(project.assetStoragePath, assetStoragePath))) {
+      throw new Error('该项目素材目录已存在，请重新选择存放位置。')
+    }
+    const project = await createProjectRecord({ id, name, description: request.body.description, assetStoragePath, assetStorageBasePath })
+    response.status(201).json(await decorateProject(project))
+  } catch (error) {
+    response.status(400).json({ error: error instanceof Error ? error.message : '项目创建失败。' })
+  }
 })
 
 app.delete('/api/projects/:projectId', async (request, response) => {
@@ -625,8 +1274,10 @@ app.delete('/api/projects/:projectId', async (request, response) => {
     if (projectId === defaultProjectId) throw new Error('默认项目不能删除。')
     const projectFolder = getProjectFolder(projectId)
     if (!existsSync(join(projectFolder, 'project.json'))) return response.status(404).json({ error: '项目不存在。' })
+    const project = await readProject(projectId)
+    const preservedAssetStoragePath = project.assetStoragePath || ''
     await rm(projectFolder, { recursive: true, force: true })
-    response.json({ ok: true, id: projectId })
+    response.json({ ok: true, id: projectId, preservedAssetStoragePath })
   } catch (error) {
     response.status(400).json({ error: error instanceof Error ? error.message : '项目删除失败。' })
   }
@@ -667,6 +1318,203 @@ app.put('/api/projects/:projectId/modules', async (request, response) => {
     response.json({ ok: true, updatedAt: project.updatedAt, changedModules: changedIds, impactedAssets })
   } catch (error) {
     response.status(400).json({ error: error instanceof Error ? error.message : '模块配置保存失败。' })
+  }
+})
+
+app.get('/api/projects/:projectId/plan', async (request, response) => {
+  try {
+    const projectId = assertProjectId(request.params.projectId)
+    await readProject(projectId)
+    const filePath = projectPlanFile(projectId)
+    response.json(existsSync(filePath) ? JSON.parse(await readFile(filePath, 'utf8')) : defaultProjectPlan(projectId))
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : '项目计划读取失败。' })
+  }
+})
+
+app.put('/api/projects/:projectId/plan', async (request, response) => {
+  try {
+    const projectId = assertProjectId(request.params.projectId)
+    const project = await readProject(projectId)
+    const plan = normalizeProjectPlan(projectId, request.body.plan)
+    await writeJsonAtomic(projectPlanFile(projectId), plan)
+    project.updatedAt = plan.updatedAt
+    await writeJsonAtomic(join(getProjectFolder(projectId), 'project.json'), project)
+    response.json({ ok: true, plan })
+  } catch (error) {
+    response.status(400).json({ error: error instanceof Error ? error.message : '项目计划保存失败。' })
+  }
+})
+
+app.get('/api/projects/:projectId/main-visual-deliverables', async (request, response) => {
+  try {
+    const projectId = assertProjectId(request.params.projectId)
+    await readProject(projectId)
+    const filePath = mainVisualDeliverablesFile(projectId)
+    const value = existsSync(filePath) ? JSON.parse(await readFile(filePath, 'utf8')) : defaultMainVisualDeliverables(projectId)
+    response.json(normalizeMainVisualDeliverables(projectId, value))
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : '主视觉交付物记录读取失败。' })
+  }
+})
+
+app.put('/api/projects/:projectId/main-visual-deliverables', async (request, response) => {
+  try {
+    const projectId = assertProjectId(request.params.projectId)
+    const project = await readProject(projectId)
+    const deliverables = normalizeMainVisualDeliverables(projectId, request.body.deliverables, String(request.body.validationItemId || ''))
+    await writeJsonAtomic(mainVisualDeliverablesFile(projectId), deliverables)
+    project.updatedAt = deliverables.updatedAt
+    await writeJsonAtomic(join(getProjectFolder(projectId), 'project.json'), project)
+    response.json({ ok: true, deliverables })
+  } catch (error) {
+    response.status(400).json({ error: error instanceof Error ? error.message : '主视觉交付物记录保存失败。' })
+  }
+})
+
+app.get('/api/projects/:projectId/character-setting-sheets', async (request, response) => {
+  try {
+    const projectId = assertProjectId(request.params.projectId)
+    await readProject(projectId)
+    const filePath = characterSettingSheetsFile(projectId)
+    const value = existsSync(filePath) ? JSON.parse(await readFile(filePath, 'utf8')) : defaultCharacterSettingSheets(projectId)
+    response.json(normalizeCharacterSettingSheets(projectId, value))
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : '角色设定表读取失败。' })
+  }
+})
+
+app.put('/api/projects/:projectId/character-setting-sheets', async (request, response) => {
+  try {
+    const projectId = assertProjectId(request.params.projectId)
+    const project = await readProject(projectId)
+    const sheets = normalizeCharacterSettingSheets(projectId, request.body.sheets)
+    await writeJsonAtomic(characterSettingSheetsFile(projectId), sheets)
+    project.updatedAt = sheets.updatedAt
+    await writeJsonAtomic(join(getProjectFolder(projectId), 'project.json'), project)
+    response.json({ ok: true, sheets })
+  } catch (error) {
+    response.status(400).json({ error: error instanceof Error ? error.message : '角色设定表保存失败。' })
+  }
+})
+
+app.get('/api/projects/:projectId/city-content', async (request, response) => {
+  try {
+    const projectId = assertProjectId(request.params.projectId)
+    await readProject(projectId)
+    const filePath = cityContentFile(projectId)
+    response.json(existsSync(filePath) ? normalizeCityContent(projectId, JSON.parse(await readFile(filePath, 'utf8'))) : defaultCityContent(projectId))
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : '城市内容读取失败。' })
+  }
+})
+
+app.put('/api/projects/:projectId/city-content', async (request, response) => {
+  try {
+    const projectId = assertProjectId(request.params.projectId)
+    const project = await readProject(projectId)
+    const content = normalizeCityContent(projectId, request.body.content)
+    await validateCityCatalogReferences(projectId, content)
+    await writeJsonAtomic(cityContentFile(projectId), content)
+    project.updatedAt = content.updatedAt
+    await writeJsonAtomic(join(getProjectFolder(projectId), 'project.json'), project)
+    response.json({ ok: true, content })
+  } catch (error) {
+    response.status(400).json({ error: error instanceof Error ? error.message : '城市内容保存失败。' })
+  }
+})
+
+app.post('/api/projects/:projectId/cities/:cityId/background-music', audioUpload.single('audio'), async (request, response) => {
+  const file = request.file
+  if (!file) return response.status(400).json({ error: '请选择 MP3、WAV、OGG、M4A、AAC 或 FLAC 音频文件。' })
+  let targetFolder = ''
+  try {
+    const projectId = assertProjectId(request.params.projectId)
+    const cityId = cleanCityId(request.params.cityId, '')
+    const musicId = cleanCityId(request.body.musicId, '')
+    if (!cityId || !musicId) throw new Error('城市或背景音乐配置 ID 无效。')
+    await readProject(projectId)
+    const extension = extname(file.originalname).toLowerCase()
+    if (!supportedAudioExtensions.has(extension)) throw new Error('音频格式不受支持。')
+    const assetRoot = await getProjectAssetFolder(projectId)
+    targetFolder = join(assetRoot, 'assets', 'source', 'city-background-music', cityId, musicId)
+    await rm(targetFolder, { recursive: true, force: true })
+    await mkdir(targetFolder, { recursive: true })
+    const fileName = `source${extension}`
+    await rename(file.path, join(targetFolder, fileName))
+    const resourceRef = `assets/source/city-background-music/${cityId}/${musicId}/${fileName}`
+    const audioUrl = `/project-assets/${projectId}/${resourceRef}`
+    await writeFile(join(targetFolder, 'audio.json'), `${JSON.stringify({ schemaVersion: 1, projectId, cityId, musicId, originalName: normalizeUploadedFileName(file.originalname), fileName, size: file.size, createdAt: new Date().toISOString() }, null, 2)}\n`, 'utf8')
+    response.status(201).json({ music: { resourceRef, audioUrl, originalName: normalizeUploadedFileName(file.originalname) } })
+  } catch (error) {
+    if (file.path && existsSync(file.path)) await rm(file.path, { force: true })
+    if (targetFolder) await rm(targetFolder, { recursive: true, force: true })
+    response.status(400).json({ error: error instanceof Error ? error.message : '背景音乐上传失败。' })
+  }
+})
+
+app.delete('/api/projects/:projectId/cities/:cityId/background-music/:musicId', async (request, response) => {
+  try {
+    const projectId = assertProjectId(request.params.projectId)
+    const cityId = cleanCityId(request.params.cityId, '')
+    const musicId = cleanCityId(request.params.musicId, '')
+    if (!cityId || !musicId) throw new Error('城市或背景音乐配置 ID 无效。')
+    await readProject(projectId)
+    const folder = join(await getProjectAssetFolder(projectId), 'assets', 'source', 'city-background-music', cityId, musicId)
+    await rm(folder, { recursive: true, force: true })
+    response.json({ ok: true })
+  } catch (error) {
+    response.status(400).json({ error: error instanceof Error ? error.message : '背景音乐删除失败。' })
+  }
+})
+
+app.get('/api/projects/:projectId/pet-content', async (request, response) => {
+  try {
+    const projectId = assertProjectId(request.params.projectId)
+    await readProject(projectId)
+    const filePath = petContentFile(projectId)
+    response.json(existsSync(filePath) ? normalizePetContent(projectId, JSON.parse(await readFile(filePath, 'utf8'))) : defaultPetContent(projectId))
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : '宠物内容读取失败。' })
+  }
+})
+
+app.put('/api/projects/:projectId/pet-content', async (request, response) => {
+  try {
+    const projectId = assertProjectId(request.params.projectId)
+    const project = await readProject(projectId)
+    const content = normalizePetContent(projectId, request.body.content)
+    await writeJsonAtomic(petContentFile(projectId), content)
+    project.updatedAt = content.updatedAt
+    await writeJsonAtomic(join(getProjectFolder(projectId), 'project.json'), project)
+    response.json({ ok: true, content })
+  } catch (error) {
+    response.status(400).json({ error: error instanceof Error ? error.message : '宠物内容保存失败。' })
+  }
+})
+
+app.get('/api/projects/:projectId/game-content', async (request, response) => {
+  try {
+    const projectId = assertProjectId(request.params.projectId)
+    await readProject(projectId)
+    const filePath = gameContentFile(projectId)
+    response.json(existsSync(filePath) ? JSON.parse(await readFile(filePath, 'utf8')) : defaultGameContent(projectId))
+  } catch (error) {
+    response.status(404).json({ error: error instanceof Error ? error.message : '游戏内容读取失败。' })
+  }
+})
+
+app.put('/api/projects/:projectId/game-content', async (request, response) => {
+  try {
+    const projectId = assertProjectId(request.params.projectId)
+    const project = await readProject(projectId)
+    const content = normalizeGameContent(projectId, request.body.content)
+    await writeJsonAtomic(gameContentFile(projectId), content)
+    project.updatedAt = content.updatedAt
+    await writeJsonAtomic(join(getProjectFolder(projectId), 'project.json'), project)
+    response.json({ ok: true, content })
+  } catch (error) {
+    response.status(400).json({ error: error instanceof Error ? error.message : '游戏内容保存失败。' })
   }
 })
 
@@ -803,7 +1651,8 @@ app.put('/api/asset-registry/:assetId/relations', async (request, response) => {
 app.post('/api/asset-registry/:assetId/validate', async (request, response) => {
   try {
     const projectId = assertProjectId(request.body.projectId)
-    const [registry, standards] = await Promise.all([ensureAssetRegistry(projectId), loadTechnicalStandards(projectId)])
+    const registry = await ensureAssetRegistry(projectId)
+    const standards = await loadTechnicalStandards(projectId)
     const asset = registry.assets.find((item) => item.id === request.params.assetId && !item.archivedAt)
     if (!asset) return response.status(404).json({ error: '资产不存在。' })
     const version = asset.versions.find((item) => item.id === String(request.body.versionId || asset.currentVersionId))
@@ -888,12 +1737,13 @@ app.post('/api/image-assets', imageUpload.array('images', 12), async (request, r
     const moduleId = String(request.body.moduleId || 'unassigned')
     if (!assetModules.has(moduleId)) throw new Error('不支持的素材模块。')
     const titlePrefix = cleanName(request.body.name)
+    const assetRoot = await getProjectAssetFolder(projectId)
     const created = []
     for (const [index, file] of files.entries()) {
       const extension = extname(file.originalname).toLowerCase()
       if (!supportedImageExtensions.has(extension)) throw new Error('图片格式不受支持。')
       const id = `asset-${Date.now()}-${randomUUID().slice(0, 8)}`
-      const assetFolder = join(getProjectFolder(projectId), 'assets', 'source', moduleId, id)
+      const assetFolder = join(assetRoot, 'assets', 'source', moduleId, id)
       createdFolders.push(assetFolder)
       await mkdir(assetFolder, { recursive: true })
       const fileName = `source${extension}`
@@ -907,7 +1757,7 @@ app.post('/api/image-assets', imageUpload.array('images', 12), async (request, r
         moduleId,
         name: files.length > 1 ? `${titlePrefix} ${index + 1}` : titlePrefix,
         createdAt: new Date().toISOString(),
-        originalName: file.originalname,
+        originalName: normalizeUploadedFileName(file.originalname),
         fileName,
         size: file.size,
         width: imageMetadata.width,
@@ -915,10 +1765,10 @@ app.post('/api/image-assets', imageUpload.array('images', 12), async (request, r
         pixelFormat: imageMetadata.pixelFormat,
         alphaDetected: imageMetadata.alphaDetected,
         status: 'source',
-        outputDirectory: `project-data/projects/${projectId}/assets/source/${moduleId}/${id}`,
+        outputDirectory: assetFolder,
       }
       await writeFile(join(assetFolder, 'asset.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
-      const publicManifest = { ...manifest, imageUrl: `/project-data/projects/${projectId}/assets/source/${moduleId}/${id}/${fileName}` }
+      const publicManifest = { ...manifest, imageUrl: `/project-assets/${projectId}/assets/source/${moduleId}/${id}/${fileName}` }
       await registerManifestAsset(projectId, publicManifest, assetArtifactFromImage(publicManifest), 'draft')
       created.push(publicManifest)
     }
@@ -936,7 +1786,7 @@ app.delete('/api/image-assets/:moduleId/:assetId', async (request, response) => 
     const moduleId = String(request.params.moduleId || '')
     const assetId = String(request.params.assetId || '')
     if (!assetModules.has(moduleId) || !/^asset-\d{13}-[a-f0-9]{8}$/i.test(assetId)) throw new Error('无效的图片素材。')
-    const assetFolder = join(getProjectFolder(projectId), 'assets', 'source', moduleId, assetId)
+    const assetFolder = join(await getProjectAssetFolder(projectId), 'assets', 'source', moduleId, assetId)
     const manifestPath = join(assetFolder, 'asset.json')
     if (!existsSync(manifestPath)) return response.status(404).json({ error: '图片素材不存在。' })
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
@@ -954,8 +1804,10 @@ app.get('/api/frame-sequences', async (request, response) => {
     const projectId = assertProjectId(request.query.projectId)
     await readProject(projectId)
     const moduleId = String(request.query.moduleId || '')
+    const petId = String(request.query.petId || '').trim()
     if (moduleId && !supportedModules.has(moduleId)) throw new Error('不支持的模块。')
-    response.json(await loadManifests(projectId, moduleId))
+    if (petId && moduleId !== 'pet-content') throw new Error('宠物序列帧只能在宠物内容管理中读取。')
+    response.json(await loadManifests(projectId, moduleId, petId))
   } catch (error) {
     response.status(400).json({ error: error instanceof Error ? error.message : '无法读取序列帧。' })
   }
@@ -966,7 +1818,7 @@ app.get('/api/completed-sequences', async (request, response) => {
     const projectId = assertProjectId(request.query.projectId)
     await readProject(projectId)
     const moduleId = String(request.query.moduleId || '')
-    if (!supportedModules.has(moduleId)) throw new Error('只支持读取角色动作或技能动效正式素材。')
+    if (!supportedModules.has(moduleId)) throw new Error('不支持读取此模块的正式序列帧素材。')
     response.json(await loadCompletedSequences(projectId, moduleId))
   } catch (error) {
     response.status(400).json({ error: error instanceof Error ? error.message : '无法读取已完成素材。' })
@@ -980,7 +1832,7 @@ app.delete('/api/completed-sequences/:moduleId/:assetId', async (request, respon
     const assetId = String(request.params.assetId || '')
     if (!supportedModules.has(moduleId) || !/^completed-\d{13}-[a-f0-9]{8}$/i.test(assetId)) throw new Error('无效的正式序列帧素材。')
 
-    const assetFolder = join(getProjectFolder(projectId), 'assets', 'runtime', moduleId, assetId)
+    const assetFolder = join(await getProjectAssetFolder(projectId), 'assets', 'runtime', moduleId, assetId)
     const manifestPath = join(assetFolder, 'asset.json')
     if (!existsSync(manifestPath)) return response.status(404).json({ error: '正式序列帧素材不存在。' })
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
@@ -1005,14 +1857,15 @@ app.post('/api/frame-sequences/:id/promote', async (request, response) => {
     const name = String(request.body.name || '').trim().slice(0, 60)
     if (!name) throw new Error('请输入正式素材名称。')
 
-    const sequenceFolder = join(getProjectFolder(projectId), 'frame-sequences', sequenceId)
+    const assetRoot = await getProjectAssetFolder(projectId)
+    const sequenceFolder = join(assetRoot, 'frame-sequences', sequenceId)
     const sequenceManifestPath = join(sequenceFolder, 'manifest.json')
     if (!existsSync(sequenceManifestPath)) return response.status(404).json({ error: '序列帧不存在。' })
     const source = JSON.parse(await readFile(sequenceManifestPath, 'utf8'))
     if (source.projectId !== projectId || !supportedModules.has(source.moduleId)) throw new Error('序列帧不属于当前项目。')
 
     const id = `completed-${Date.now()}-${randomUUID().slice(0, 8)}`
-    assetFolder = join(getProjectFolder(projectId), 'assets', 'runtime', source.moduleId, id)
+    assetFolder = join(assetRoot, 'assets', 'runtime', source.moduleId, id)
     await mkdir(assetFolder, { recursive: true })
     await cp(join(sequenceFolder, 'frames'), join(assetFolder, 'frames'), { recursive: true })
 
@@ -1023,11 +1876,12 @@ app.post('/api/frame-sequences/:id/promote', async (request, response) => {
       id,
       projectId,
       moduleId: source.moduleId,
+      ...(source.petId ? { petId: source.petId } : {}),
       name,
       createdAt: new Date().toISOString(),
       sourceSequenceId: source.id,
       sourceSequenceName: source.name,
-      outputDirectory: `project-data/projects/${projectId}/assets/runtime/${source.moduleId}/${id}`,
+      outputDirectory: assetFolder,
       fps: source.fps,
       duration: source.duration,
       width: source.width,
@@ -1047,6 +1901,68 @@ app.post('/api/frame-sequences/:id/promote', async (request, response) => {
   }
 })
 
+app.post('/api/frame-sequences/upload-images', frameImageUpload.array('frames', 2000), async (request, response) => {
+  const uploadedFiles = request.files || []
+  if (uploadedFiles.length === 0) return response.status(400).json({ error: '请选择至少一张 PNG 序列帧。' })
+
+  let sequenceFolder
+  try {
+    const projectId = assertProjectId(request.body.projectId)
+    await readProject(projectId)
+    const moduleId = String(request.body.moduleId || '')
+    const petId = String(request.body.petId || '').trim()
+    if (moduleId !== 'pet-content' || !petId) throw new Error('直接上传序列帧只能关联到已保存的宠物。')
+    await assertPetExists(projectId, petId)
+
+    const fps = parseNumber(request.body.fps, 12)
+    if (fps < 1 || fps > 60) throw new Error('采样帧率必须在 1 到 60 FPS 之间。')
+    if (uploadedFiles.length > 2000) throw new Error('单次最多上传 2000 张序列帧。')
+    const orderedFiles = [...uploadedFiles].sort((left, right) => normalizeUploadedFileName(left.originalname).localeCompare(normalizeUploadedFileName(right.originalname), undefined, { numeric: true, sensitivity: 'base' }))
+    const metadata = await probeImage(orderedFiles[0].path)
+    const id = `${new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '')}-${randomUUID().slice(0, 8)}`
+    sequenceFolder = join(await getProjectAssetFolder(projectId), 'frame-sequences', id)
+    const framesFolder = join(sequenceFolder, 'frames')
+    await mkdir(framesFolder, { recursive: true })
+    const frames = []
+    for (const [index, file] of orderedFiles.entries()) {
+      const frameName = `frame_${String(index + 1).padStart(4, '0')}.png`
+      await rename(file.path, join(framesFolder, frameName))
+      frames.push(frameName)
+    }
+
+    const manifest = {
+      schemaVersion: 1,
+      id,
+      projectId,
+      moduleId,
+      petId,
+      sourceType: 'uploaded-png-sequence',
+      name: cleanName(request.body.name),
+      createdAt: new Date().toISOString(),
+      sourceOriginalName: `直接上传 PNG 序列帧（${frames.length} 张）`,
+      sourceFile: '',
+      outputDirectory: framesFolder,
+      fps,
+      startTime: 0,
+      endTime: frames.length / fps,
+      duration: frames.length / fps,
+      sourceDuration: frames.length / fps,
+      width: metadata.width,
+      height: metadata.height,
+      sourceFrameRate: fps,
+      frameCount: frames.length,
+      framePattern: 'frame_%04d.png',
+      frames,
+    }
+    await writeFile(join(sequenceFolder, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
+    response.status(201).json(toPublicManifest(manifest))
+  } catch (error) {
+    await Promise.all(uploadedFiles.map((file) => existsSync(file.path) ? rm(file.path, { force: true }) : Promise.resolve()))
+    if (sequenceFolder) await rm(sequenceFolder, { recursive: true, force: true })
+    response.status(400).json({ error: error instanceof Error ? error.message : 'PNG 序列帧上传失败。' })
+  }
+})
+
 app.post('/api/frame-sequences', upload.single('video'), async (request, response) => {
   const uploadedFile = request.file
   if (!uploadedFile) return response.status(400).json({ error: '请选择一个受支持的视频文件。' })
@@ -1056,7 +1972,12 @@ app.post('/api/frame-sequences', upload.single('video'), async (request, respons
     const projectId = assertProjectId(request.body.projectId)
     await readProject(projectId)
     const moduleId = String(request.body.moduleId || '')
-    if (!supportedModules.has(moduleId)) throw new Error('只允许在角色动作设计和技能动效设计中制作序列帧。')
+    if (!supportedModules.has(moduleId)) throw new Error('不支持在此模块中制作序列帧。')
+    const petId = String(request.body.petId || '').trim()
+    if (moduleId === 'pet-content') {
+      if (!petId) throw new Error('请选择要关联序列帧的宠物。')
+      await assertPetExists(projectId, petId)
+    } else if (petId) throw new Error('只有宠物内容管理可以关联宠物序列帧。')
 
     const fps = parseNumber(request.body.fps, 12)
     const startTime = parseNumber(request.body.startTime, 0)
@@ -1078,7 +1999,7 @@ app.post('/api/frame-sequences', upload.single('video'), async (request, respons
     if (estimatedFrames > 2000) throw new Error(`预计生成 ${estimatedFrames} 帧，超过单次 2000 帧限制。请降低帧率或缩短范围。`)
 
     const id = `${new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '')}-${randomUUID().slice(0, 8)}`
-    const sequencesRoot = join(getProjectFolder(projectId), 'frame-sequences')
+    const sequencesRoot = join(await getProjectAssetFolder(projectId), 'frame-sequences')
     sequenceFolder = join(sequencesRoot, id)
     const framesFolder = join(sequenceFolder, 'frames')
     await mkdir(framesFolder, { recursive: true })
@@ -1099,11 +2020,13 @@ app.post('/api/frame-sequences', upload.single('video'), async (request, respons
       id,
       projectId,
       moduleId,
+      ...(petId ? { petId } : {}),
+      sourceType: 'video-to-frames',
       name: cleanName(request.body.name),
       createdAt: new Date().toISOString(),
       sourceOriginalName: uploadedFile.originalname,
       sourceFile,
-      outputDirectory: `project-data/projects/${projectId}/frame-sequences/${id}/frames`,
+      outputDirectory: framesFolder,
       fps,
       startTime,
       endTime: effectiveEnd,
@@ -1125,12 +2048,30 @@ app.post('/api/frame-sequences', upload.single('video'), async (request, respons
   }
 })
 
+app.put('/api/frame-sequences/:id/parameters', async (request, response) => {
+  try {
+    const projectId = assertProjectId(request.body.projectId)
+    const id = String(request.params.id || '')
+    if (!/^\d{8}T\d{6}-[a-f0-9]{8}$/i.test(id)) throw new Error('无效的序列帧 ID。')
+    const manifestPath = join(await getProjectAssetFolder(projectId), 'frame-sequences', id, 'manifest.json')
+    if (!existsSync(manifestPath)) return response.status(404).json({ error: '序列帧不存在。' })
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    if (manifest.projectId !== projectId || manifest.moduleId !== 'pet-content' || !manifest.petId) throw new Error('只允许编辑宠物动态素材参数。')
+    manifest.animationParameters = normalizeAnimationParameters(request.body.animationParameters)
+    manifest.updatedAt = new Date().toISOString()
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
+    response.json(toPublicManifest(manifest))
+  } catch (error) {
+    response.status(400).json({ error: error instanceof Error ? error.message : '动态素材参数保存失败。' })
+  }
+})
+
 app.delete('/api/frame-sequences/:id', async (request, response) => {
   try {
     const projectId = assertProjectId(request.query.projectId)
     const id = String(request.params.id || '')
     if (!/^\d{8}T\d{6}-[a-f0-9]{8}$/i.test(id)) throw new Error('无效的序列帧 ID。')
-    const sequenceFolder = join(getProjectFolder(projectId), 'frame-sequences', id)
+    const sequenceFolder = join(await getProjectAssetFolder(projectId), 'frame-sequences', id)
     const manifestPath = join(sequenceFolder, 'manifest.json')
     if (!existsSync(manifestPath)) return response.status(404).json({ error: '序列帧不存在。' })
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import {
   ArrowLeft,
   ArrowRight,
+  ArrowUpNarrowWide,
   BookOpenCheck,
   Boxes,
   Brush,
@@ -10,13 +11,16 @@ import {
   ChevronRight,
   CircleGauge,
   CircleAlert,
+  ClipboardList,
   Clock3,
   CloudSun,
   Crosshair,
   FileVideo2,
   Film,
   FolderKanban,
+  FolderOpen,
   GitBranch,
+  Gamepad2,
   Footprints,
   Image,
   ImagePlus,
@@ -28,6 +32,7 @@ import {
   MapPinned,
   MoreHorizontal,
   PackagePlus,
+  PawPrint,
   Palette,
   PanelsTopLeft,
   Pause,
@@ -48,8 +53,14 @@ import {
   Zap,
 } from 'lucide-react'
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { defaultModules, type ArtModule, type RequirementSection } from './data/modules'
+import { defaultModules, type AiPromptProfile, type ArtModule, type RequirementSection } from './data/modules'
 import { getActiveProjectId, loadLegacyModules, mergeModules, saveLegacyModules, setActiveProjectId } from './lib/storage'
+import { ProjectPlanPage } from './ProjectPlanPage'
+import { CityContentPage } from './CityContentPage'
+import { PetContentPage } from './PetContentPage'
+import { GameContentPage } from './GameContentPage'
+import { MainVisualDeliverablesPanel } from './MainVisualDeliverablesPanel'
+import { CharacterSettingSheetsPanel } from './CharacterSettingSheetsPanel'
 
 const isStaticDemo = import.meta.env.VITE_STATIC_DEMO === 'true'
 
@@ -120,6 +131,8 @@ type Project = {
   createdAt: string
   updatedAt: string
   isDefault: boolean
+  assetStoragePath: string
+  assetStorageMode: 'managed' | 'external'
   frameSequenceCount: number
   imageAssetCount: number
 }
@@ -131,6 +144,8 @@ const staticDemoProject: Project = {
   createdAt: '',
   updatedAt: '',
   isDefault: true,
+  assetStoragePath: '浏览器本地存储（无文件目录）',
+  assetStorageMode: 'managed',
   frameSequenceCount: 0,
   imageAssetCount: 0,
 }
@@ -253,12 +268,12 @@ function App() {
     window.scrollTo(0, 0)
   }
 
-  const createProject = async (name: string, description: string) => {
+  const createProject = async (name: string, description: string, assetStoragePath: string) => {
     if (isStaticDemo) throw new Error('在线演示版不创建服务器项目，请在本地运行完整平台。')
     const response = await fetch('/api/projects', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, description }),
+      body: JSON.stringify({ name, description, assetStorageBasePath: assetStoragePath }),
     })
     const project = await response.json()
     if (!response.ok) throw new Error(project.error || '项目创建失败。')
@@ -301,6 +316,10 @@ function App() {
             <Route path="/assets" element={<ImageAssetLibrary projectId={activeProjectId} modules={modules} />} />
             <Route path="/asset-registry" element={<AssetRegistry projectId={activeProjectId} modules={modules} />} />
             <Route path="/asset-registry/:assetId" element={<AssetDetail projectId={activeProjectId} modules={modules} />} />
+            <Route path="/project-plan" element={<ProjectPlanPage projectId={activeProjectId} modules={modules} staticDemo={isStaticDemo} />} />
+            <Route path="/city-content-management" element={<CityContentPage projectId={activeProjectId} staticDemo={isStaticDemo} />} />
+            <Route path="/pet-content-management" element={<PetContentPage projectId={activeProjectId} staticDemo={isStaticDemo} mainVisualModule={modules.find((module) => module.id === 'main-visual-design')} />} />
+            <Route path="/game-content-management" element={<GameContentPage projectId={activeProjectId} staticDemo={isStaticDemo} />} />
             <Route path="/technical-standards" element={<TechnicalStandardsPage projectId={activeProjectId} />} />
             <Route
               path="/modules/:moduleId/requirements"
@@ -359,7 +378,7 @@ function Sidebar({
   menuOpen: boolean
   onClose: () => void
   onSwitchProject: (projectId: string) => void
-  onCreateProject: (name: string, description: string) => Promise<void>
+  onCreateProject: (name: string, description: string, assetStoragePath: string) => Promise<void>
   onDeleteProject: (project: Project) => Promise<void>
   onRefreshProjects: () => Promise<Project[]>
   staticDemo: boolean
@@ -368,17 +387,35 @@ function Sidebar({
   const [creating, setCreating] = useState(false)
   const [projectName, setProjectName] = useState('')
   const [projectDescription, setProjectDescription] = useState('')
+  const [assetStoragePath, setAssetStoragePath] = useState('')
+  const [selectingFolder, setSelectingFolder] = useState(false)
   const [projectError, setProjectError] = useState('')
+
+  const selectAssetFolder = async () => {
+    setSelectingFolder(true)
+    setProjectError('')
+    try {
+      const response = await fetch('/api/system/select-folder', { method: 'POST' })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || '无法选择素材目录。')
+      if (!result.cancelled && result.path) setAssetStoragePath(result.path)
+    } catch (error) {
+      setProjectError(error instanceof Error ? error.message : '无法选择素材目录。')
+    } finally {
+      setSelectingFolder(false)
+    }
+  }
 
   const submitProject = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!projectName.trim()) return
+    if (!projectName.trim() || !assetStoragePath) return
     setCreating(true)
     setProjectError('')
     try {
-      await onCreateProject(projectName, projectDescription)
+      await onCreateProject(projectName, projectDescription, assetStoragePath)
       setProjectName('')
       setProjectDescription('')
+      setAssetStoragePath('')
       setProjectMenuOpen(false)
       onClose()
     } catch (error) {
@@ -389,7 +426,10 @@ function Sidebar({
   }
 
   const removeProject = async (project: Project) => {
-    if (!window.confirm(`确定删除项目“${project.name}”吗？该项目的全部配置、图片、原视频和序列帧都会被永久删除。`)) return
+    const message = project.assetStorageMode === 'external'
+      ? `确定删除项目“${project.name}”吗？平台内的项目配置会被删除，但外部素材文件夹会保留：\n${project.assetStoragePath}`
+      : `确定删除项目“${project.name}”吗？该项目的全部配置、图片、原视频和序列帧都会被永久删除。`
+    if (!window.confirm(message)) return
     setProjectError('')
     try {
       await onDeleteProject(project)
@@ -398,6 +438,9 @@ function Sidebar({
       setProjectError(error instanceof Error ? error.message : '项目删除失败。')
     }
   }
+
+  const gameplayModule = modules.find((module) => module.id === 'gameplay-design')
+  const detailedGameplayModule = modules.find((module) => module.id === 'detailed-gameplay-design')
 
   return (
     <>
@@ -435,7 +478,11 @@ function Sidebar({
                   onClick={() => { onSwitchProject(project.id); setProjectMenuOpen(false); onClose() }}
                 >
                   <span>{project.name.slice(0, 1)}</span>
-                  <div><strong>{project.name}</strong><small>{project.imageAssetCount} 图片 · {project.frameSequenceCount} 序列</small></div>
+                  <div>
+                    <strong>{project.name}</strong>
+                    <small>{project.imageAssetCount} 图片 · {project.frameSequenceCount} 序列</small>
+                    <small className="project-storage-path" title={project.assetStoragePath}>{project.assetStoragePath}</small>
+                  </div>
                   {project.id === activeProject?.id && <Check size={14} />}
                 </button>
               ))}
@@ -446,8 +493,17 @@ function Sidebar({
               <strong><PackagePlus size={14} /> 创建新项目</strong>
               <input value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="项目名称" maxLength={60} />
               <textarea value={projectDescription} onChange={(event) => setProjectDescription(event.target.value)} placeholder="项目说明（可选）" maxLength={240} rows={2} />
+              <div className="asset-folder-field">
+                <span>美术素材存放位置</span>
+                <button type="button" onClick={() => void selectAssetFolder()} disabled={selectingFolder}>
+                  {selectingFolder ? <LoaderCircle className="spin" size={13} /> : <FolderOpen size={13} />}
+                  {selectingFolder ? '正在打开…' : assetStoragePath ? '重新选择位置' : '选择已有文件夹'}
+                </button>
+                <code title={assetStoragePath}>{assetStoragePath || '尚未选择素材存放位置'}</code>
+                <small>可以选择已有文件的文件夹，平台会在其中创建项目专属子目录。</small>
+              </div>
               {projectError && <small className="project-error">{projectError}</small>}
-              <button type="submit" disabled={creating || !projectName.trim()}>{creating ? <LoaderCircle className="spin" size={14} /> : <Plus size={14} />} 创建并进入</button>
+              <button type="submit" disabled={creating || !projectName.trim() || !assetStoragePath}>{creating ? <LoaderCircle className="spin" size={14} /> : <Plus size={14} />} 创建并进入</button>
               {activeProject && !activeProject.isDefault && (
                 <button className="delete-project-button" type="button" onClick={() => void removeProject(activeProject)}><Trash2 size={13} /> 删除当前项目</button>
               )}
@@ -471,16 +527,48 @@ function Sidebar({
           </NavLink>
 
           <p className="nav-label modules-label">游戏设计</p>
-          {modules.filter(isGameDesignModule).map((module) => {
-            const Icon = moduleIcons[module.icon]
-            return (
-              <NavLink key={module.id} to={`/modules/${module.id}`} onClick={onClose}>
-                <span className="nav-module-icon" style={{ color: module.accent }}><Icon size={17} /></span>
-                <span>{module.title}</span>
-                <span className="nav-order">{module.id === 'gameplay-design' ? 'UP' : 'DT'}</span>
+          {gameplayModule && (() => {
+            const GameplayIcon = moduleIcons[gameplayModule.icon]
+            return <div className="nav-module-group has-children gameplay-nav-group">
+              <NavLink to={`/modules/${gameplayModule.id}`} onClick={onClose}>
+                <span className="nav-module-icon" style={{ color: gameplayModule.accent }}><GameplayIcon size={17} /></span>
+                <span>{gameplayModule.title}</span>
+                <span className="nav-order">UP</span>
               </NavLink>
-            )
-          })}
+              {detailedGameplayModule && (() => {
+                const DetailedIcon = moduleIcons[detailedGameplayModule.icon]
+                return <NavLink className="nav-child-module" to={`/modules/${detailedGameplayModule.id}`} onClick={onClose}>
+                  <span className="nav-child-branch" />
+                  <span className="nav-module-icon" style={{ color: detailedGameplayModule.accent }}><DetailedIcon size={16} /></span>
+                  <span>{detailedGameplayModule.title}</span>
+                  <span className="nav-order">DT</span>
+                </NavLink>
+              })()}
+              <NavLink className="nav-child-module" to="/city-content-management" onClick={onClose}>
+                <span className="nav-child-branch" />
+                <span className="nav-module-icon" style={{ color: '#567a92' }}><MapPinned size={16} /></span>
+                <span>城市内容管理</span>
+                <span className="nav-order">CT</span>
+              </NavLink>
+              <NavLink className="nav-child-module" to="/pet-content-management" onClick={onClose}>
+                <span className="nav-child-branch" />
+                <span className="nav-module-icon" style={{ color: '#8b6b46' }}><PawPrint size={16} /></span>
+                <span>宠物内容管理</span>
+                <span className="nav-order">PT</span>
+              </NavLink>
+              <NavLink className="nav-child-module" to="/game-content-management" onClick={onClose}>
+                <span className="nav-child-branch" />
+                <span className="nav-module-icon" style={{ color: '#6276a5' }}><Gamepad2 size={16} /></span>
+                <span>游戏管理</span>
+                <span className="nav-order">GM</span>
+              </NavLink>
+            </div>
+          })()}
+          <NavLink to="/project-plan" onClick={onClose}>
+            <ClipboardList size={18} />
+            项目计划
+            <span className="nav-order">PM</span>
+          </NavLink>
           <NavLink to="/technical-standards" onClick={onClose}>
             <Settings2 size={18} />
             技术美术规范
@@ -848,13 +936,13 @@ const standardSections: { id: keyof Pick<TechnicalStandards, 'engine' | 'naming'
 ]
 
 const standardFieldLabels: Record<string, string> = {
-  name: '引擎名称', version: '版本', renderer: '渲染器', targetPlatform: '目标平台', resourceRoot: '资源根目录', prefabExtension: '预制体扩展名',
-  pattern: '命名正则', example: '命名示例', lowercaseRecommended: '建议小写', versionSuffix: '版本后缀', sourceRoot: '源文件目录', runtimeRoot: '运行时目录', characterSceneRoot: '角色场景目录', vfxSceneRoot: '特效场景目录', uiRoot: 'UI 目录', textureFilter: '纹理过滤', prefabRule: '预制体规则',
-  materialPrefix: '材质前缀', shaderPrefix: 'Shader 前缀', uniformPrefix: 'Uniform 前缀', allowedBlendModes: '允许混合模式', shaderRule: 'Shader 规则',
-  maxBoneInfluences: '最大骨骼影响数', minimumWeight: '最小权重', normalizeWeights: '权重归一化', rootBoneName: '根骨名称', deformBoneSuffix: '形变骨后缀', rule: '补充规则',
-  defaultSampleFps: '默认采样 FPS', maxSampleFps: '最大采样 FPS', maxSequenceFrames: '最大序列帧数', compressionTolerance: '压缩容差', rootMotionRule: 'Root Motion 规则', loopRule: '循环规则',
-  maxParticlesPerEffect: '单特效最大粒子', maxConcurrentParticles: '最大并发粒子', maxDrawCallsPerEffect: '单特效最大 Draw Call', maxTextureSize: '最大贴图尺寸', maxDurationSeconds: '最大持续秒数',
-  allowedImageFormats: '允许图片格式', allowedVideoFormats: '允许视频格式', maxSourceFileMB: '最大源文件 MB', minWidth: '最小宽度', minHeight: '最小高度', maxWidth: '最大宽度', maxHeight: '最大高度', requireRuntimeAlphaDeclaration: '要求声明 Alpha',
+  name: '引擎名称', version: '版本', renderer: '渲染器', targetPlatform: '目标平台', resourceRoot: '资源根目录', prefabExtension: '预制体扩展名', targetFps: '目标帧率', minimumResolution: '最低分辨率', aspectRule: '画面比例规则', inputRule: '输入适配规则', offlineRule: '离线运行规则', contentPackMountRule: '城市资源包挂载规则', testDeviceRule: '最低测试设备规则', performanceBudget: '帧时间与帧率预算', memoryBudget: '内存与显存预算', loadBudget: '启动与加载预算', packageBudget: '应用与内容包体预算',
+  pattern: '命名正则', example: '命名示例', lowercaseRecommended: '建议小写', versionSuffix: '版本后缀', idRule: '业务 ID 规则', cityPackExample: '城市包命名示例', sourceRoot: '源文件目录', runtimeRoot: '运行时目录', characterSceneRoot: '角色场景目录', environmentSceneRoot: '城市场景目录', petSceneRoot: '宠物场景目录', vfxSceneRoot: '特效场景目录', uiRoot: 'UI 目录', audioRoot: '西语音频目录', cityPackRoot: '城市资源包目录', textureFilter: '纹理过滤', textureCompression: '纹理压缩', prefabRule: '预制体规则', cityPackStructure: '城市包结构', audioImportRule: '语音音频导入', uiScalingRule: 'UI 缩放规则', touchTargetRule: '触控热区规则', safeAreaRule: '安全区规则', fontRule: '字体规则', worldScaleRule: '世界尺度与网格', cameraScaleRule: '镜头与角色占比', renderLayerRule: '渲染层级与遮挡', atlasRule: '图集规格', assetManifestRule: '运行时资产清单', asrRuntimeRule: 'ASR运行时规则', audioConcurrencyRule: '音频并发预算', aiHandoffStandardId: 'AI 输出接入规范编号', aiResponsibilityRule: 'AI 生成与技术接入职责', aiCanvasFormatRule: 'AI 源图接入格式与限制', aiAlphaDeliveryRule: 'AI 透明与拆分交付', aiImportHandoffRule: 'AI 源图导入与派生', aiManifestEvidenceRule: 'AI 资产清单与生成证据', aiPromptReferenceRule: 'Prompt 引用与版本规则',
+  materialPrefix: '材质前缀', shaderPrefix: 'Shader 前缀', uniformPrefix: 'Uniform 前缀', allowedBlendModes: '允许混合模式', shaderRule: 'Shader 规则', colorSpaceRule: '色彩空间规则', mobileShaderRule: '移动端 Shader 规则', transparencyRule: '透明叠层规则', accessibilityRule: '可读性与色弱规则',
+  maxBoneInfluences: '最大骨骼影响数', minimumWeight: '最小权重', normalizeWeights: '权重归一化', rootBoneName: '根骨名称', deformBoneSuffix: '形变骨后缀', assetStrategy: '角色资产策略', skeletonRule: '骨骼规则', groundingRule: '接地与锚点规则', rule: '补充规则',
+  defaultSampleFps: '默认采样 FPS', maxSampleFps: '最大采样 FPS', maxSequenceFrames: '最大序列帧数', compressionTolerance: '压缩容差', rootMotionRule: 'Root Motion 规则', loopRule: '循环规则', spritePlaybackRule: '序列帧播放规则', interactionRule: '交互动画规则', downloadUiRule: '下载 UI 动画规则',
+  maxParticlesPerEffect: '单特效最大粒子', maxConcurrentParticles: '最大并发粒子', maxDrawCallsPerEffect: '单特效最大 Draw Call', maxTextureSize: '最大贴图尺寸', maxDurationSeconds: '最大持续秒数', usageRule: '特效使用范围', readabilityRule: '特效可读性规则', degradeRule: '低配降级规则',
+  allowedImageFormats: '允许图片格式', allowedVideoFormats: '允许视频格式', allowedAudioFormats: '允许音频格式', maxSourceFileMB: '最大源文件 MB', maxAudioFileKB: '单词音频最大 KB', minWidth: '最小宽度', minHeight: '最小高度', maxWidth: '最大宽度', maxHeight: '最大高度', runtimeMaxTextureSize: '运行时最大纹理', cityPackMaxMB: '单城市包上限 MB', cityAudioBudgetMB: '单城市音频预算 MB', minimumTouchTargetDp: '最小触控热区 dp', requiredPackFiles: '城市包必需内容', offlineAcceptance: '离线验收规则', colorAccessibility: '色弱验收规则', fontLanguageCoverage: '字体语言覆盖', requireRuntimeAlphaDeclaration: '要求声明 Alpha', maxSceneDrawCalls: '单场景最大 Draw Call', maxTextureMemoryMB: '纹理显存上限 MB', maxNativeMemoryMB: '原生峰值内存 MB', maxWebMemoryMB: 'Web峰值内存 MB', coldStartMaxSeconds: '冷启动上限秒', areaLoadMaxSeconds: '片区加载上限秒', interactionResponseMaxMs: '交互反馈上限 ms', asrFeedbackP95Ms: 'ASR反馈P95 ms', asrFalseAcceptMaxPercent: 'ASR误通过上限 %', asrTwoTrySuccessMinPercent: 'ASR两次通过率下限 %', performanceAcceptance: '性能验收场景', contentValidation: '城市内容完整性门禁',
 }
 
 function TechnicalStandardsPage({ projectId }: { projectId: string }) {
@@ -1095,7 +1183,7 @@ function Dashboard({ modules, onResetAll }: { modules: ArtModule[]; onResetAll: 
       </section>
 
       <section className="stats-row" aria-label="平台统计">
-        <Stat icon={<FolderKanban size={20} />} label="项目模块" value={String(modules.length).padStart(2, '0')} detail="游戏设计 + 美术生产" />
+        <Stat icon={<FolderKanban size={20} />} label="项目模块" value={String(modules.length + 1).padStart(2, '0')} detail="项目计划 + 游戏设计 + 美术生产" />
         <Stat icon={<Layers3 size={20} />} label="内容分组" value={String(sectionCount).padStart(2, '0')} detail="项目级可编辑记录" />
         <Stat icon={<ShieldCheck size={20} />} label="记录与规则" value={String(itemCount)} detail="玩法事实、规格与门禁" />
         <Stat icon={<CircleGauge size={20} />} label="配置状态" value="LOCAL" detail="自动保存到本地" />
@@ -1105,12 +1193,68 @@ function Dashboard({ modules, onResetAll }: { modules: ArtModule[]; onResetAll: 
         <div className="section-heading">
           <div>
             <span className="eyebrow"><span /> GAME DESIGN FOUNDATION</span>
-            <h2>游戏玩法设计模块</h2>
+            <h2>游戏设计与项目计划</h2>
           </div>
-          <p>先定义宏观范围，再维护可执行的玩法结构、流程与规则；这里不是美术素材生产模块。</p>
+          <p>先定义宏观范围与详细规则，再用项目计划持续跟踪实现任务、负责人、进度和验收。</p>
         </div>
         <div className="module-grid gameplay-module-grid">
           {gameDesignModules.map((module) => <ModuleCard key={module.id} module={module} />)}
+          <Link to="/city-content-management" className="module-card" style={{ '--accent': '#567a92', '--tint': '#edf4f7' } as AccentStyle}>
+            <div className="module-card-top">
+              <span className="module-card-icon"><MapPinned size={25} strokeWidth={1.8} /></span>
+              <span className="module-number">CITY</span>
+            </div>
+            <small>City Content Catalog</small>
+            <h3>城市内容管理</h3>
+            <p>按城市维护实际的片区、宝箱、核心词汇与宠物内容，并与详细玩法的通用规则分离。</p>
+            <div className="module-meta">
+              <span><Layers3 size={14} /> 内容实例</span>
+              <span><ClipboardList size={14} /> 范围追踪</span>
+            </div>
+            <div className="module-link">查看并维护城市内容 <ArrowRight size={17} /></div>
+          </Link>
+          <Link to="/pet-content-management" className="module-card" style={{ '--accent': '#8b6b46', '--tint': '#f7f1e8' } as AccentStyle}>
+            <div className="module-card-top">
+              <span className="module-card-icon"><PawPrint size={25} strokeWidth={1.8} /></span>
+              <span className="module-number">PET</span>
+            </div>
+            <small>Pet Content Catalog</small>
+            <h3>宠物内容管理</h3>
+            <p>维护宠物的唯一内容定义，并由各城市引用为宝箱或探索奖励。</p>
+            <div className="module-meta">
+              <span><Layers3 size={14} /> 统一定义</span>
+              <span><Link2 size={14} /> 城市引用</span>
+            </div>
+            <div className="module-link">查看并维护宠物内容 <ArrowRight size={17} /></div>
+          </Link>
+          <Link to="/game-content-management" className="module-card" style={{ '--accent': '#6276a5', '--tint': '#edf0f8' } as AccentStyle}>
+            <div className="module-card-top">
+              <span className="module-card-icon"><Gamepad2 size={25} strokeWidth={1.8} /></span>
+              <span className="module-number">GAME</span>
+            </div>
+            <small>Interactive Game Catalog</small>
+            <h3>游戏管理</h3>
+            <p>维护可复用的语言互动与小游戏内容，并由各城市按片区或宝箱引用。</p>
+            <div className="module-meta">
+              <span><Layers3 size={14} /> 统一定义</span>
+              <span><Link2 size={14} /> 城市引用</span>
+            </div>
+            <div className="module-link">查看并维护游戏内容 <ArrowRight size={17} /></div>
+          </Link>
+          <Link to="/project-plan" className="module-card" style={{ '--accent': '#65758a', '--tint': '#edf1f5' } as AccentStyle}>
+            <div className="module-card-top">
+              <span className="module-card-icon"><ClipboardList size={25} strokeWidth={1.8} /></span>
+              <span className="module-number">PLAN</span>
+            </div>
+            <small>Project Implementation Plan</small>
+            <h3>项目计划</h3>
+            <p>编辑和监控项目实现计划，按阶段维护任务、负责人、状态、进度、日期与验收规则。</p>
+            <div className="module-meta">
+              <span><Layers3 size={14} /> 阶段化管理</span>
+              <span><CircleGauge size={14} /> 进展监控</span>
+            </div>
+            <div className="module-link">查看并维护项目计划 <ArrowRight size={17} /></div>
+          </Link>
         </div>
       </section>}
 
@@ -1239,6 +1383,7 @@ function ModuleDetail({
   const isGameplayFoundation = module.id === 'gameplay-design'
   const isDetailedGameplay = module.id === 'detailed-gameplay-design'
   const isModuleOverview = !requirementsMode
+  const mainVisualModule = modules.find((candidate) => candidate.id === 'main-visual-design')
   const editPath = `/modules/${module.id}/requirements`
   const style = { '--accent': module.accent, '--tint': module.tint } as AccentStyle
 
@@ -1280,6 +1425,17 @@ function ModuleDetail({
     setEditingSectionId(null)
   }
 
+  const sortSectionsByLabelNumber = () => {
+    const getLabelNumber = (section: RequirementSection) => {
+      const match = section.label.match(/^\s*(\d+)/)
+      return match ? Number.parseInt(match[1], 10) : Number.POSITIVE_INFINITY
+    }
+    updateModule(module.id, (current) => ({
+      ...current,
+      sections: [...current.sections].sort((first, second) => getLabelNumber(first) - getLabelNumber(second)),
+    }))
+  }
+
   return (
     <div className="module-detail page-enter" style={style}>
       <button className="back-link" onClick={() => navigate(requirementsMode ? `/modules/${module.id}` : '/')}>
@@ -1315,53 +1471,55 @@ function ModuleDetail({
         </div>
       </section>
 
-      {isStoryLevelChild(module) && (
-        <Link className="parent-module-authority" to="/modules/story-level-design">
-          <span><MapPinned size={19} /></span>
-          <div><small>所属父模块 · 剧情关卡设计</small><strong>{module.title}是剧情关卡设计下的功能模块</strong><p>场景功能、空间动线、叙事节拍与关卡需求以剧情关卡设计模块为准。</p></div>
-          <ArrowLeft size={18} />
-        </Link>
-      )}
-
-      {isGameplayFoundation ? (
-        <Link className="gameplay-authority master" to="/modules/detailed-gameplay-design">
-          <span><CircleGauge size={19} /></span>
-          <div><small>GAMEPLAY SCOPE SOURCE</small><strong>玩法设计为详细玩法设计提供范围边界</strong><p>产品定位、世界观、核心循环、特色机制、资产规模与目标平台会在详细玩法设计中展开为可执行规则。</p></div>
-          <ArrowRight size={18} />
-        </Link>
-      ) : isDetailedGameplay ? (
-        <>
-          <Link className="gameplay-authority" to="/modules/gameplay-design">
-            <span><CircleGauge size={19} /></span>
-            <div><small>上游依赖 · 玩法设计</small><strong>详细规则必须遵守玩法设计的范围边界</strong><p>角色数量、特色机制、关卡规模、多人模式与目标平台以玩法设计模块的当前记录为准。</p></div>
+      <div className="module-authority-grid">
+        {isStoryLevelChild(module) && (
+          <Link className="parent-module-authority" to="/modules/story-level-design">
+            <span><MapPinned size={19} /></span>
+            <div><small>所属父模块 · 剧情关卡设计</small><strong>{module.title}是剧情关卡设计下的功能模块</strong><p>场景功能、空间动线、叙事节拍与关卡需求以剧情关卡设计模块为准。</p></div>
             <ArrowLeft size={18} />
           </Link>
-          <Link className="style-authority master" to="/modules/main-visual-design">
-            <span><GitBranch size={19} /></span>
-            <div><small>DETAILED GAMEPLAY FACT SOURCE</small><strong>这里是下游制作使用的详细玩法事实源</strong><p>操作状态、动作时序、战斗技能、多人协作、关卡遭遇、成长经济和异常流程将约束美术与技术实现。</p></div>
+        )}
+
+        {isGameplayFoundation ? (
+          <Link className="gameplay-authority master" to="/modules/detailed-gameplay-design">
+            <span><CircleGauge size={19} /></span>
+            <div><small>GAMEPLAY SCOPE SOURCE</small><strong>玩法设计为详细玩法设计提供范围边界</strong><p>产品定位、世界观、核心循环、特色机制、资产规模与目标平台会在详细玩法设计中展开为可执行规则。</p></div>
             <ArrowRight size={18} />
           </Link>
-        </>
-      ) : module.id === 'main-visual-design' ? (
-        <>
-          <Link className="gameplay-authority" to="/modules/detailed-gameplay-design">
-            <span><GitBranch size={19} /></span>
-            <div><small>上游依赖 · 详细玩法设计</small><strong>主视觉必须同时读取范围与详细玩法事实</strong><p>项目定位以玩法设计为准；镜头、状态、关卡、技能、多人协作与反馈需求以详细玩法设计为准。</p></div>
-            <ArrowLeft size={18} />
-          </Link>
-          <div className="style-authority master">
+        ) : isDetailedGameplay ? (
+          <>
+            <Link className="gameplay-authority" to="/modules/gameplay-design">
+              <span><CircleGauge size={19} /></span>
+              <div><small>上游依赖 · 玩法设计</small><strong>详细规则必须遵守玩法设计的范围边界</strong><p>角色数量、特色机制、关卡规模、多人模式与目标平台以玩法设计模块的当前记录为准。</p></div>
+              <ArrowLeft size={18} />
+            </Link>
+            <Link className="style-authority master" to="/modules/main-visual-design">
+              <span><GitBranch size={19} /></span>
+              <div><small>DETAILED GAMEPLAY FACT SOURCE</small><strong>这里是下游制作使用的详细玩法事实源</strong><p>操作状态、动作时序、战斗技能、多人协作、关卡遭遇、成长经济和异常流程将约束美术与技术实现。</p></div>
+              <ArrowRight size={18} />
+            </Link>
+          </>
+        ) : module.id === 'main-visual-design' ? (
+          <>
+            <Link className="gameplay-authority" to="/modules/detailed-gameplay-design">
+              <span><GitBranch size={19} /></span>
+              <div><small>上游依赖 · 详细玩法设计</small><strong>主视觉必须同时读取范围与详细玩法事实</strong><p>项目定位以玩法设计为准；镜头、状态、关卡、技能、多人协作与反馈需求以详细玩法设计为准。</p></div>
+              <ArrowLeft size={18} />
+            </Link>
+            <div className="style-authority master">
+              <span><Palette size={19} /></span>
+              <div><small>PROJECT STYLE SOURCE</small><strong>这是当前项目全部美术设计的主视觉事实源</strong><p>角色、动作、技能、场景、地图元素、UI和剧情关卡均应继承这里批准的风格规则。</p></div>
+              <ShieldCheck size={21} />
+            </div>
+          </>
+        ) : (
+          <Link className="style-authority" to="/modules/main-visual-design">
             <span><Palette size={19} /></span>
-            <div><small>PROJECT STYLE SOURCE</small><strong>这是当前项目全部美术设计的主视觉事实源</strong><p>角色、动作、技能、场景、地图元素、UI和剧情关卡均应继承这里批准的风格规则。</p></div>
-            <ShieldCheck size={21} />
-          </div>
-        </>
-      ) : (
-        <Link className="style-authority" to="/modules/main-visual-design">
-          <span><Palette size={19} /></span>
-          <div><small>受主视觉设计约束</small><strong>当前模块继承项目主视觉风格</strong><p>色板、材质、光照、镜头和生成约束以主视觉模块中的美术设计要求为准。</p></div>
-          <ArrowRight size={18} />
-        </Link>
-      )}
+            <div><small>受主视觉设计约束</small><strong>当前模块继承项目主视觉风格</strong><p>色板、材质、光照、镜头和生成约束以主视觉模块中的美术设计要求为准。</p></div>
+            <ArrowRight size={18} />
+          </Link>
+        )}
+      </div>
 
       {isModuleOverview && module.id === 'main-visual-design' && (
         <VisualInfluenceMap modules={modules} />
@@ -1393,10 +1551,26 @@ function ModuleDetail({
             onDelete={removeSection}
             onAdd={addSection}
             onReset={handleReset}
+            onSort={sortSectionsByLabelNumber}
           />
         ) : <CompletedModuleDesigns module={module} projectId={projectId} revision={completedAssetsRevision} />
       ) : (
         <>
+          <AiPromptRecord
+            module={module}
+            projectId={projectId}
+            inheritedPrompt={module.id === 'main-visual-design' ? undefined : mainVisualModule?.aiPrompt}
+            onSave={(aiPrompt) => updateModule(module.id, (current) => ({ ...current, aiPrompt }))}
+          />
+
+          {module.id === 'main-visual-design' && (
+            <MainVisualDeliverablesPanel projectId={projectId} staticDemo={isStaticDemo} />
+          )}
+
+          {module.id === 'character-design' && (
+            <CharacterSettingSheetsPanel projectId={projectId} staticDemo={isStaticDemo} />
+          )}
+
           <div className="requirements-heading">
             <div>
               <span className="eyebrow"><span /> {isGameplay ? 'EDITABLE GAMEPLAY RECORD' : 'EDITABLE REQUIREMENTS'}</span>
@@ -1448,6 +1622,255 @@ function ModuleDetail({
   )
 }
 
+const emptyAiPrompt: AiPromptProfile = {
+  prompt: '',
+  negativePrompt: '',
+  modelAndParameters: '',
+  referenceNotes: '',
+  updatedAt: '',
+}
+
+function AiPromptRecord({
+  module,
+  projectId,
+  inheritedPrompt,
+  onSave,
+}: {
+  module: ArtModule
+  projectId: string
+  inheritedPrompt?: AiPromptProfile
+  onSave: (profile: AiPromptProfile) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState<AiPromptProfile>(module.aiPrompt || emptyAiPrompt)
+  const [promptError, setPromptError] = useState('')
+  const isMainVisual = module.id === 'main-visual-design'
+  const isEditing = isMainVisual || editing
+  const profile = module.aiPrompt || emptyAiPrompt
+
+  useEffect(() => {
+    setEditing(false)
+    setDraft(module.aiPrompt || emptyAiPrompt)
+  }, [module.id, module.aiPrompt])
+
+  const savePrompt = () => {
+    if (isMainVisual && /\basset-\d{13}-[a-f0-9]{8}\b/i.test(draft.referenceNotes)) {
+      setPromptError('参考备注会自动解析交付物图片，请不要手工填写资产 ID。')
+      return
+    }
+    setPromptError('')
+    onSave({
+      prompt: draft.prompt.trim(),
+      negativePrompt: draft.negativePrompt.trim(),
+      modelAndParameters: draft.modelAndParameters.trim(),
+      referenceNotes: draft.referenceNotes.trim(),
+      updatedAt: new Date().toISOString(),
+    })
+  }
+
+  const fieldCopy = isMainVisual
+    ? {
+        prompt: '项目级基础 Prompt',
+        negativePrompt: '项目共享负面 Prompt',
+        modelAndParameters: 'AI 生成参数与画布（不含技术接入）',
+        referenceNotes: '参考优先级与排除规则',
+      }
+    : {
+        prompt: `${module.title}补充 Prompt`,
+        negativePrompt: `${module.title}专属负面 Prompt`,
+        modelAndParameters: '模块参数补充或覆盖',
+        referenceNotes: '模块追加参考输入与排除备注',
+      }
+
+  return (
+    <section
+      className={`ai-prompt-record${isMainVisual ? ' is-master' : ''}`}
+      data-purpose="ai-generation-prompt"
+      data-module-id={module.id}
+      data-inherits-from={isMainVisual ? undefined : 'main-visual-design'}
+      aria-labelledby={`ai-prompt-title-${module.id}`}
+    >
+      <header>
+        <div className="ai-prompt-heading-icon"><WandSparkles size={20} /></div>
+        <div>
+          <span>{isMainVisual ? 'PROJECT AI PROMPT SOURCE' : 'MODULE AI PROMPT PROFILE'}</span>
+          <h2 id={`ai-prompt-title-${module.id}`}>{isMainVisual ? '项目主视觉 Prompt 母版' : `${module.title} Prompt 记录`}</h2>
+          <p>{isMainVisual ? '这里是全部美术模块共同继承的生成基线；主视觉未批准前不得将它视为正式批量生产许可。' : '生成时先读取主视觉母版，再追加本模块内容；模块补充不得改写项目级镜头、材质、光照和色彩规则。'}</p>
+        </div>
+        {!isEditing && <button className="edit-button" onClick={() => { setDraft(profile); setEditing(true) }}><PencilLine size={14} /> 编辑 Prompt</button>}
+      </header>
+
+      {isMainVisual && <MainVisualReferenceImages projectId={projectId} />}
+
+      {!isMainVisual && (
+        <div className="ai-prompt-inheritance">
+          <div className="ai-prompt-inheritance-title">
+            <GitBranch size={15} />
+            <span><strong>继承自主视觉设计</strong><small>以下内容只读，不复制到模块字段</small></span>
+          </div>
+          <PromptValue label="项目级基础 Prompt" value={inheritedPrompt?.prompt} empty="主视觉基础 Prompt 尚未填写" />
+          <PromptValue label="项目共享负面 Prompt" value={inheritedPrompt?.negativePrompt} empty="主视觉共享负面 Prompt 尚未填写" />
+          <PromptValue label="统一模型与生成参数" value={inheritedPrompt?.modelAndParameters} empty="主视觉模型与参数尚未锁定" />
+          <PromptValue label="项目参考输入、优先级与排除备注" value={inheritedPrompt?.referenceNotes} empty="主视觉参考输入尚未登记" />
+        </div>
+      )}
+
+      {!isMainVisual && <MainVisualReferenceImages projectId={projectId} compact />}
+
+      {isEditing ? (
+        <div className="ai-prompt-editor">
+          <PromptEditorField label={fieldCopy.prompt} value={draft.prompt} rows={7} onChange={(prompt) => setDraft({ ...draft, prompt })} />
+          <PromptEditorField label={fieldCopy.negativePrompt} value={draft.negativePrompt} rows={5} onChange={(negativePrompt) => setDraft({ ...draft, negativePrompt })} />
+          <PromptEditorField label={fieldCopy.modelAndParameters} hint={isMainVisual ? '只填写模型、Seed、参考权重、采样和概念图画布；格式、压缩、导入与运行时限制引用技术美术规范。' : undefined} value={draft.modelAndParameters} rows={4} onChange={(modelAndParameters) => setDraft({ ...draft, modelAndParameters })} />
+          <PromptEditorField label={fieldCopy.referenceNotes} hint={isMainVisual ? '只填写参考优先级、冲突处理和不可复制元素；图片、资产 ID、版本、权利与技术状态自动读取交付物和资产注册中心。' : undefined} value={draft.referenceNotes} rows={4} onChange={(referenceNotes) => { setDraft({ ...draft, referenceNotes }); setPromptError('') }} />
+          {promptError && <p className="ai-prompt-editor-error"><CircleAlert size={14} />{promptError}</p>}
+          <div className="ai-prompt-editor-actions">
+            <button className="button ghost" onClick={() => { setDraft(profile); setEditing(false) }}>{isMainVisual ? '重置' : '取消'}</button>
+            <button className="button primary" onClick={savePrompt}><Save size={16} /> 保存 Prompt</button>
+          </div>
+        </div>
+      ) : (
+        <div className="ai-prompt-values">
+          <PromptValue label={fieldCopy.prompt} value={profile.prompt} />
+          <PromptValue label={fieldCopy.negativePrompt} value={profile.negativePrompt} />
+          <PromptValue label={fieldCopy.modelAndParameters} value={profile.modelAndParameters} />
+          <PromptValue label={fieldCopy.referenceNotes} value={profile.referenceNotes} />
+          <small className="ai-prompt-updated">{profile.updatedAt ? `最后更新：${new Date(profile.updatedAt).toLocaleString('zh-CN')}` : '尚未保存结构化 Prompt'}</small>
+        </div>
+      )}
+    </section>
+  )
+}
+
+type MainVisualReferenceDeliverable = {
+  id: string
+  title: string
+  imageAssetIds: string[]
+}
+
+const mainVisualReferenceRoles = [
+  {
+    deliverableId: 'gameplay-anchor',
+    label: '游戏内参考',
+    weight: '建议权重约 65%',
+    purpose: '负责游戏镜头、空间尺度、可行走地面和交互可读性。',
+  },
+  {
+    deliverableId: 'key-visual',
+    label: '宣传参考',
+    weight: '建议权重约 35%',
+    purpose: '负责宣传构图、角色完成度和展示性光效，不覆盖游戏镜头规则。',
+  },
+] as const
+
+function MainVisualReferenceImages({ projectId, compact = false }: { projectId: string; compact?: boolean }) {
+  const [assets, setAssets] = useState<ImageAsset[]>([])
+  const [deliverables, setDeliverables] = useState<MainVisualReferenceDeliverable[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showReferenceImages, setShowReferenceImages] = useState(false)
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
+  const loadReferences = async () => {
+    if (!projectId || isStaticDemo) {
+      setLoading(false)
+      return
+    }
+    setLoading(true)
+    try {
+      const query = new URLSearchParams({ projectId, moduleId: 'main-visual-design' })
+      const [assetsResponse, deliverablesResponse] = await Promise.all([
+        fetch(`/api/image-assets?${query}`),
+        fetch(`/api/projects/${projectId}/main-visual-deliverables`),
+      ])
+      const [assetsResult, deliverablesResult] = await Promise.all([assetsResponse.json(), deliverablesResponse.json()])
+      if (!assetsResponse.ok) throw new Error(assetsResult.error || '无法读取主视觉参考图片。')
+      if (!deliverablesResponse.ok) throw new Error(deliverablesResult.error || '无法读取主视觉交付物。')
+      setAssets(assetsResult)
+      setDeliverables(deliverablesResult.items || [])
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : '读取主视觉参考图片失败。' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { void loadReferences() }, [projectId])
+
+  const assetById = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets])
+  const resolvedReferences = useMemo(() => mainVisualReferenceRoles.map((role) => {
+    const deliverable = deliverables.find((item) => item.id === role.deliverableId)
+    return { ...role, deliverable, assetIds: deliverable?.imageAssetIds || [] }
+  }), [deliverables])
+
+  return (
+    <div className={`prompt-reference-images${compact ? ' is-compact' : ''}`} data-purpose="ai-generation-reference-images">
+      {!compact && (
+        <div className="prompt-reference-heading">
+          <div><ImagePlus size={17} /><span><strong>主视觉交付图片汇总</strong><small>图片与交付正文均在下方具体交付物中维护</small></span></div>
+          <div className="prompt-reference-actions"><button type="button" onClick={() => setShowReferenceImages((current) => !current)}>{showReferenceImages ? '收起图片' : '展开图片'} <ChevronRight className={showReferenceImages ? 'is-expanded' : ''} size={13} /></button><Link to="/assets">在图片素材库管理 <ArrowRight size={13} /></Link></div>
+        </div>
+      )}
+
+      {message?.type === 'error' && <div className="sequence-message error"><X size={15} />{message.text}</div>}
+
+      <div className="prompt-resolved-references" data-purpose="resolved-main-visual-reference-inputs">
+        <div className="prompt-resolved-heading"><Link2 size={15} /><span><strong>自动解析参考输入</strong><small>直接读取 03／04 号交付物当前绑定图片，不在 Prompt 文本中复制资产 ID</small></span></div>
+        <div className="prompt-resolved-grid">
+          {resolvedReferences.map((reference) => (
+            <article key={reference.deliverableId} data-reference-role={reference.deliverableId}>
+              <header><span>{reference.label}</span><small>{reference.weight}</small></header>
+              <strong>{reference.deliverable?.title || `${reference.deliverableId} 尚未建立`}</strong>
+              <p>{reference.purpose}</p>
+              <div>
+                {reference.assetIds.length ? reference.assetIds.map((assetId) => {
+                  const asset = assetById.get(assetId)
+                  return asset ? <a key={assetId} href={asset.imageUrl} target="_blank" rel="noreferrer"><Image size={13} /><code>{assetId}</code></a> : <span key={assetId} className="missing"><CircleAlert size={13} /><code>{assetId}</code></span>
+                }) : <span className="missing"><CircleAlert size={13} />尚未绑定图片</span>}
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+
+      {!compact && (!showReferenceImages ? (
+        <button type="button" className="prompt-reference-toggle" onClick={() => setShowReferenceImages(true)}><Image size={18} /><span>图片区域已收起{assets.length ? ` · ${assets.length} 张图片` : ''}</span><ChevronRight size={15} /></button>
+      ) : loading ? (
+        <div className="prompt-reference-empty"><LoaderCircle className="spin" size={18} /> 正在读取参考图片…</div>
+      ) : assets.length === 0 ? (
+        <div className="prompt-reference-empty"><Image size={20} /><span>下方交付物尚未绑定主视觉图片</span></div>
+      ) : (
+        <div className="prompt-reference-grid">
+          {assets.map((asset) => (
+            <a key={asset.id} href={asset.imageUrl} target="_blank" rel="noreferrer" data-reference-image-id={asset.id}>
+              <img src={asset.imageUrl} alt={asset.name} />
+              <span><strong>{asset.name}</strong><small>{asset.originalName} · source/draft</small></span>
+            </a>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function PromptValue({ label, value, empty = '尚未填写' }: { label: string; value?: string; empty?: string }) {
+  return (
+    <div className={`ai-prompt-value${value ? '' : ' is-empty'}`}>
+      <span>{label}</span>
+      <pre>{value || empty}</pre>
+    </div>
+  )
+}
+
+function PromptEditorField({ label, hint, value, rows, onChange }: { label: string; hint?: string; value: string; rows: number; onChange: (value: string) => void }) {
+  return (
+    <label>
+      <span>{label}</span>
+      {hint && <small>{hint}</small>}
+      <textarea value={value} rows={rows} onChange={(event) => onChange(event.target.value)} />
+    </label>
+  )
+}
+
 function StoryLevelDetailSubmodules({ modules }: { modules: ArtModule[] }) {
   const children = storyLevelChildIds.map((id) => modules.find((module) => module.id === id)).filter((module): module is ArtModule => Boolean(module))
   return (
@@ -1481,6 +1904,7 @@ function GameplayDesignRecord({
   onDelete,
   onAdd,
   onReset,
+  onSort,
 }: {
   module: ArtModule
   editingSectionId: string | null
@@ -1490,6 +1914,7 @@ function GameplayDesignRecord({
   onDelete: (sectionId: string) => void
   onAdd: () => void
   onReset: () => void
+  onSort: () => void
 }) {
   return (
     <section className="gameplay-records">
@@ -1500,6 +1925,7 @@ function GameplayDesignRecord({
           <p>{module.id === 'detailed-gameplay-design' ? '这里记录可直接交给程序、美术、关卡与测试执行的玩法结构、流程、规则和边界情况。' : '这里展示当前项目正在使用的宏观玩法事实与范围边界，不代表美术素材或已完成资产。'}</p>
         </div>
         <div className="gameplay-record-actions">
+          <button className="button ghost" onClick={onSort}><ArrowUpNarrowWide size={16} /> 按序号排序</button>
           <button className="button ghost" onClick={onReset}><RotateCcw size={16} /> 恢复默认</button>
           <button className="button primary" onClick={onAdd}><Plus size={17} /> 新增记录分组</button>
         </div>
