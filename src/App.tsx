@@ -150,7 +150,80 @@ const staticDemoProject: Project = {
   imageAssetCount: 0,
 }
 
+const STATIC_ACCESS_PASSWORD = 'weiyuchen'
+const STATIC_ACCESS_STORAGE_KEY = 'artflow:static-access'
+
 function App() {
+  if (isStaticDemo) {
+    return (
+      <StaticAccessGate>
+        <WorkspaceApp />
+      </StaticAccessGate>
+    )
+  }
+
+  return <WorkspaceApp />
+}
+
+function StaticAccessGate({ children }: { children: ReactNode }) {
+  const [authenticated, setAuthenticated] = useState(() => {
+    try {
+      return sessionStorage.getItem(STATIC_ACCESS_STORAGE_KEY) === 'granted'
+    } catch {
+      return false
+    }
+  })
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+
+  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (password !== STATIC_ACCESS_PASSWORD) {
+      setError('密码不正确，请重新输入。')
+      return
+    }
+    try {
+      sessionStorage.setItem(STATIC_ACCESS_STORAGE_KEY, 'granted')
+    } catch {
+      // Continue for browsers that disable session storage.
+    }
+    setError('')
+    setAuthenticated(true)
+  }
+
+  if (authenticated) return <>{children}</>
+
+  return (
+    <main className="access-gate">
+      <section className="access-card">
+        <div className="access-mark"><ShieldCheck size={24} /></div>
+        <span className="access-eyebrow">ARTFLOW · PRIVATE DEMO</span>
+        <h1>进入 ArtFlow</h1>
+        <p>这是受保护的在线演示版本，请输入访问密码后继续。</p>
+        <form onSubmit={submit}>
+          <label htmlFor="access-password">访问密码</label>
+          <input
+            id="access-password"
+            type="password"
+            value={password}
+            onChange={(event) => {
+              setPassword(event.target.value)
+              if (error) setError('')
+            }}
+            placeholder="请输入访问密码"
+            autoComplete="current-password"
+            autoFocus
+          />
+          {error && <small className="access-error" role="alert">{error}</small>}
+          <button className="button access-submit" type="submit">验证并进入</button>
+        </form>
+        <small className="access-note">访问授权仅保存在当前浏览器会话中。</small>
+      </section>
+    </main>
+  )
+}
+
+function WorkspaceApp() {
   const { pathname } = useLocation()
   const [projects, setProjects] = useState<Project[]>([])
   const [activeProjectId, setActiveProject] = useState('')
@@ -294,6 +367,8 @@ function App() {
     return <div className="app-loading"><LoaderCircle className="spin" size={28} /><strong>正在加载项目工作区…</strong></div>
   }
 
+  const detailedGameplayModule = modules.find((module) => module.id === 'detailed-gameplay-design')
+
   return (
     <div className="app-shell">
       <Sidebar
@@ -319,7 +394,7 @@ function App() {
             <Route path="/project-plan" element={<ProjectPlanPage projectId={activeProjectId} modules={modules} staticDemo={isStaticDemo} />} />
             <Route path="/city-content-management" element={<CityContentPage projectId={activeProjectId} staticDemo={isStaticDemo} />} />
             <Route path="/pet-content-management" element={<PetContentPage projectId={activeProjectId} staticDemo={isStaticDemo} mainVisualModule={modules.find((module) => module.id === 'main-visual-design')} />} />
-            <Route path="/game-content-management" element={<GameContentPage projectId={activeProjectId} staticDemo={isStaticDemo} />} />
+            <Route path="/game-content-management" element={<GameContentPage projectId={activeProjectId} staticDemo={isStaticDemo} mainVisualModule={modules.find((module) => module.id === 'main-visual-design')} detailedGameplayModule={detailedGameplayModule} />} />
             <Route path="/technical-standards" element={<TechnicalStandardsPage projectId={activeProjectId} />} />
             <Route
               path="/modules/:moduleId/requirements"

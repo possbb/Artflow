@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom'
 
 type CityStatus = 'planning' | 'production' | 'review' | 'ready' | 'released'
 type ItemStatus = 'planned' | 'in_progress' | 'ready'
-type ChestType = 'main' | 'hidden'
+type ChestType = 'main' | 'hidden' | 'final'
 type PetRarity = 'common' | 'rare'
 type WordRole = 'new' | 'review' | 'distractor'
 type GamePurpose = 'teach' | 'review' | 'final'
@@ -53,7 +53,7 @@ type EntityDraft =
 
 const cityStatusCopy: Record<CityStatus, string> = { planning: '规划中', production: '制作中', review: '待验收', ready: '可接入', released: '已发布' }
 const itemStatusCopy: Record<ItemStatus, string> = { planned: '待制作', in_progress: '制作中', ready: '已就绪' }
-const chestTypeCopy: Record<ChestType, string> = { main: '主线宝箱', hidden: '隐藏宝箱' }
+const chestTypeCopy: Record<ChestType, string> = { main: '主线宝箱', hidden: '隐藏宝箱', final: '终点宝箱' }
 const petRarityCopy: Record<PetRarity, string> = { common: '普通宠物池', rare: '稀有宠物池' }
 const wordRoleCopy: Record<WordRole, string> = { new: '首次教学', review: '复现练习', distractor: '已学干扰项' }
 const gamePurposeCopy: Record<GamePurpose, string> = { teach: '教学开锁', review: '复现练习', final: '终点综合题' }
@@ -61,7 +61,7 @@ const musicScopeCopy: Record<MusicScope, string> = { city: '全城默认', area:
 const musicTriggerCopy: Record<MusicTrigger, string> = { default: '进入城市', exploration: '片区探索', chest: '宝箱互动', completion: '完成片区' }
 
 function emptyContent(projectId: string): CityContent {
-  return { schemaVersion: 6, projectId, updatedAt: '', cities: [] }
+  return { schemaVersion: 7, projectId, updatedAt: '', cities: [] }
 }
 
 function blankCity(): City {
@@ -96,13 +96,13 @@ function normalizeStaticCityContent(projectId: string, value: CityContent | null
   if (!value || !Array.isArray(value.cities)) return emptyContent(projectId)
   return {
     ...value,
-    schemaVersion: 6,
+    schemaVersion: 7,
     projectId,
     cities: value.cities.map((city) => {
       const sourceCity = city as any
       const sourceChests = Array.isArray(sourceCity.chests) ? sourceCity.chests : []
       const chests: CityChest[] = sourceChests.map((chest: any) => {
-        const type: ChestType = chest.type === 'hidden' ? 'hidden' : 'main'
+        const type: ChestType = chest.type === 'hidden' || chest.type === 'final' ? chest.type : String(chest.id || '').includes('final') || String(chest.name || '').includes('终点') ? 'final' : 'main'
         return { id: chest.id, name: chest.name, areaId: chest.areaId, type, culturalNote: chest.culturalNote || '', status: chest.status }
       })
       const vocabulary: CityVocabulary[] = (Array.isArray(sourceCity.vocabulary) ? sourceCity.vocabulary : []).map((word: any) => ({ id: word.id, spanish: word.spanish, english: word.english || '', chinese: word.chinese, category: word.category || '', areaId: word.areaId || '', status: word.status }))
@@ -396,7 +396,7 @@ function CityContentDetail({ projectId, staticDemo, city, petContent, gameConten
   const availableChestTypes = [...new Set(city.chests.map((chest) => chest.type))] as ChestType[]
   const defaultChestType = availableChestTypes[0] || 'main'
   const entityEditor = entityDraft ? createPortal(<div className="city-entity-modal-backdrop"><div className="city-entity-modal" role="dialog" aria-modal="true" aria-label="编辑城市内容"><EntityEditor projectId={projectId} staticDemo={staticDemo} city={city} petContent={petContent} gameContent={gameContent} draft={entityDraft} saving={saving} onChange={onEditEntity} onCancel={onCloseEntity} onSave={onSaveEntity} /></div></div>, document.body) : null
-  const petPoolEditor = petPoolChestType ? createPortal(<div className="city-entity-modal-backdrop"><div className="city-entity-modal" role="dialog" aria-modal="true" aria-label="配置宝箱宠物池"><PetPoolEditor key={petPoolChestType} city={city} chestType={petPoolChestType} petContent={petContent} saving={saving} onCancel={onClosePetPool} onSave={onSavePetPool} /></div></div>, document.body) : null
+  const petPoolEditor = petPoolChestType ? createPortal(<div className="city-entity-modal-backdrop"><div className="city-entity-modal" role="dialog" aria-modal="true" aria-label="配置宝箱宠物池"><PetPoolEditor key={petPoolChestType} city={city} chestType={petPoolChestType} availableChestTypes={availableChestTypes} petContent={petContent} saving={saving} onChangeChestType={onEditPetPool} onCancel={onClosePetPool} onSave={onSavePetPool} /></div></div>, document.body) : null
   return <section className="city-detail">
     <header className="city-detail-header"><div><span className={`city-status ${city.status}`}>{cityStatusCopy[city.status]}</span><h2>{city.name}<small>{city.spanishName || city.id}</small></h2><p>{city.overview || '尚未填写城市内容概览。'}</p></div><div><button className="button ghost" onClick={onEditCity}><PencilLine size={16} /> 编辑城市</button><button className="button danger" onClick={onDeleteCity} disabled={saving}><Trash2 size={16} /> 删除城市</button></div></header>
     {city.verticalSlice && <div className="city-slice-note"><FileBox size={18} /><div><strong>该城市的纵向切片说明</strong><p>{city.verticalSlice}</p></div></div>}
@@ -418,7 +418,7 @@ function CityContentDetail({ projectId, staticDemo, city, petContent, gameConten
       {city.gameWordLinks.length === 0 ? <EmptyContent text="尚未配置游戏—词汇投放。" /> : <div className="city-entity-grid">{[...city.gameWordLinks].sort((first, second) => first.order - second.order).map((link) => <article className="city-entity-card" key={link.id}><EntityCardActions onEdit={() => onEditEntity({ kind: 'wordLink', isNew: false, value: { ...link } })} onRemove={() => onRemoveEntity('wordLink', link.id, `${gameName(link.gameId)} → ${wordName(link.wordId)}`)} disabled={saving} /><span>{wordRoleCopy[link.role]} · 顺序 {link.order}</span><h4>{wordName(link.wordId)}</h4><p>{gameName(link.gameId)}</p><code>{link.gameId} → {link.wordId}</code></article>)}</div>}
     </ContentPanel>
 
-    <ContentPanel title="宝箱类型—宠物投放" description="按当前城市实际出现的宝箱类型分别维护宠物池；在同一配置窗口中可添加多只宠物并校验启用概率合计为 100%。" onAdd={availableChestTypes.length ? () => onEditPetPool(defaultChestType) : undefined}>
+    <ContentPanel title="宝箱类型—宠物投放" description="按当前城市实际出现的宝箱类型分别维护唯一宠物池；在同一配置窗口中可添加多只宠物并校验启用概率合计为 100%。" onAdd={availableChestTypes.length ? () => onEditPetPool(defaultChestType) : undefined} addLabel="选择宝箱类型配置">
       {availableChestTypes.length === 0 ? <EmptyContent text="请先创建至少一个宝箱，再配置该城市的类型宠物池。" /> : <div className="city-entity-grid">{availableChestTypes.map((chestType) => { const pets = city.pets.filter((pet) => pet.chestType === chestType); const total = petDropTotal(chestType); return <article className="city-entity-card city-pet-pool-card" key={chestType}><span>{chestTypeName(chestType)} · {total === 100 ? '概率已配平' : `当前 ${total}%`}</span><h4>{chestTypeName(chestType)}宠物池<small>{pets.length ? `已配置 ${pets.length} 只宠物` : '尚未配置宠物'}</small></h4><p>{pets.length ? pets.map((pet) => petDefinition(pet.petContentId)?.chineseName || pet.petContentId).join('、') : '点击下方按钮添加宠物与掉落概率。'}</p><small>{total === 100 ? '启用宠物的掉落概率合计为 100%，可正常投放。' : `启用宠物的掉落概率合计为 ${total}%，保存时必须调整为 100%。`}</small><button className="button ghost city-pet-pool-config" onClick={() => onEditPetPool(chestType)} disabled={saving}><PencilLine size={14} /> 配置宠物池</button></article> })}</div>}
     </ContentPanel>
 
@@ -434,8 +434,9 @@ function CityContentDetail({ projectId, staticDemo, city, petContent, gameConten
   </section>
 }
 
-function PetPoolEditor({ city, chestType, petContent, saving, onCancel, onSave }: { city: City; chestType: ChestType; petContent: PetContentPet[]; saving: boolean; onCancel: () => void; onSave: (chestType: ChestType, pets: CityPet[]) => void }) {
+function PetPoolEditor({ city, chestType, availableChestTypes, petContent, saving, onChangeChestType, onCancel, onSave }: { city: City; chestType: ChestType; availableChestTypes: ChestType[]; petContent: PetContentPet[]; saving: boolean; onChangeChestType: (value: ChestType) => void; onCancel: () => void; onSave: (chestType: ChestType, pets: CityPet[]) => void }) {
   const [pets, setPets] = useState<CityPet[]>(() => city.pets.filter((pet) => pet.chestType === chestType).map((pet) => ({ ...pet })))
+  const hasExistingConfiguration = city.pets.some((pet) => pet.chestType === chestType)
   const enabledTotal = Math.round(pets.filter((pet) => pet.enabled).reduce((sum, pet) => sum + (Number.isFinite(pet.weight) ? pet.weight : 0), 0) * 100) / 100
   const isBalanced = enabledTotal === 100
   const hasMissingPet = pets.some((pet) => !pet.petContentId)
@@ -445,7 +446,7 @@ function PetPoolEditor({ city, chestType, petContent, saving, onCancel, onSave }
   const addPet = () => setPets((current) => [...current, { ...blankPet(city.id), id: `${city.id}_pet_drop_${Date.now()}_${current.length + 1}`, chestType }])
   const removePet = (id: string) => setPets((current) => current.filter((pet) => pet.id !== id))
   const validationText = hasMissingPet ? '请为每一行选择宠物内容。' : hasDuplicatePet ? '同一宝箱类型不能重复配置同一只宠物。' : isBalanced ? '启用宠物掉落概率合计为 100%，可以保存。' : `当前启用宠物掉落概率合计为 ${enabledTotal}%，保存时必须恰好为 100%。`
-  return <form className="city-entity-editor pet-pool-editor" onSubmit={(event) => { event.preventDefault(); onSave(chestType, pets) }}><header><div><span>PET DROP POOL</span><h3>配置{chestTypeCopy[chestType]}宠物池</h3></div><button type="button" onClick={onCancel}><X size={17} /></button></header><div className="pet-pool-meta"><div><span>适用宝箱类型</span><strong>{chestTypeCopy[chestType]}</strong><small>仅应用到当前城市全部同类型宝箱</small></div><div className={isBalanced ? '' : 'invalid'}><span>启用宠物掉落概率</span><strong>{enabledTotal}<small>%</small></strong><small>{isBalanced ? '已配平，可保存' : '保存前必须调整为 100%'}</small></div></div><div className="pet-pool-rows"><header><strong>宠物内容</strong><strong>掉落概率</strong><strong>参与抽取</strong><span /></header>{pets.map((pet) => <div className="pet-pool-row" key={pet.id}><select value={pet.petContentId} onChange={(event) => updatePet(pet.id, { petContentId: event.target.value })}><option value="">请选择宠物内容</option>{petContent.map((item) => <option key={item.id} value={item.id} disabled={item.id !== pet.petContentId && pets.some((current) => current.petContentId === item.id)}>{item.chineseName} · {item.spanishName}</option>)}</select><label><input type="number" min="0" max="100" step="0.01" value={pet.weight} onChange={(event) => updatePet(pet.id, { weight: Number(event.target.value) })} /><span>%</span></label><label className="city-check"><input type="checkbox" checked={pet.enabled} onChange={(event) => updatePet(pet.id, { enabled: event.target.checked })} /><span>启用</span></label><button type="button" className="pet-pool-remove" onClick={() => removePet(pet.id)} aria-label="删除宠物"><Trash2 size={14} /></button></div>)}</div><button type="button" className="button ghost pet-pool-add" onClick={addPet}><Plus size={15} /> 新增宠物</button><p className={`pet-pool-validation${canSave ? ' valid' : ''}`}>{canSave ? <><Check size={15} /> {validationText}</> : <><CircleAlert size={15} /> {validationText}</>}</p><footer><button className="button ghost" type="button" onClick={onCancel}>取消</button><button className="button primary" type="submit" disabled={saving || !canSave}>{saving ? <LoaderCircle className="spin" size={15} /> : <Save size={15} />}{saving ? '正在保存…' : '保存宠物池'}</button></footer></form>
+  return <form className="city-entity-editor pet-pool-editor" onSubmit={(event) => { event.preventDefault(); onSave(chestType, pets) }}><header><div><span>PET DROP POOL</span><h3>配置{chestTypeCopy[chestType]}宠物池</h3></div><button type="button" onClick={onCancel}><X size={17} /></button></header><div className="pet-pool-meta"><label className="pet-pool-type-select"><span>适用宝箱类型 *</span><select aria-label="适用宝箱类型" value={chestType} onChange={(event) => onChangeChestType(event.target.value as ChestType)}>{availableChestTypes.map((type) => <option key={type} value={type}>{chestTypeCopy[type]}{city.pets.some((pet) => pet.chestType === type) ? '（已有配置）' : '（未配置）'}</option>)}</select><small>{hasExistingConfiguration ? '该宝箱类型已有唯一配置；正在编辑该配置。' : '该宝箱类型尚未配置；保存后将创建唯一配置。'}</small></label><div className={isBalanced ? '' : 'invalid'}><span>启用宠物掉落概率</span><strong>{enabledTotal}<small>%</small></strong><small>{isBalanced ? '已配平，可保存' : '保存前必须调整为 100%'}</small></div></div><p className="pet-pool-type-note"><CircleAlert size={14} />每个宝箱类型在当前城市只能保留一份宠物池配置；切换类型会载入该类型的现有配置，未保存的当前改动不会保留。</p><div className="pet-pool-rows"><header><strong>宠物内容</strong><strong>掉落概率</strong><strong>参与抽取</strong><span /></header>{pets.map((pet) => <div className="pet-pool-row" key={pet.id}><select value={pet.petContentId} onChange={(event) => updatePet(pet.id, { petContentId: event.target.value })}><option value="">请选择宠物内容</option>{petContent.map((item) => <option key={item.id} value={item.id} disabled={item.id !== pet.petContentId && pets.some((current) => current.petContentId === item.id)}>{item.chineseName} · {item.spanishName}</option>)}</select><label><input type="number" min="0" max="100" step="0.01" value={pet.weight} onChange={(event) => updatePet(pet.id, { weight: Number(event.target.value) })} /><span>%</span></label><label className="city-check"><input type="checkbox" checked={pet.enabled} onChange={(event) => updatePet(pet.id, { enabled: event.target.checked })} /><span>启用</span></label><button type="button" className="pet-pool-remove" onClick={() => removePet(pet.id)} aria-label="删除宠物"><Trash2 size={14} /></button></div>)}</div><button type="button" className="button ghost pet-pool-add" onClick={addPet}><Plus size={15} /> 新增宠物</button><p className={`pet-pool-validation${canSave ? ' valid' : ''}`}>{canSave ? <><Check size={15} /> {validationText}</> : <><CircleAlert size={15} /> {validationText}</>}</p><footer><button className="button ghost" type="button" onClick={onCancel}>取消</button><button className="button primary" type="submit" disabled={saving || !canSave}>{saving ? <LoaderCircle className="spin" size={15} /> : <Save size={15} />}{saving ? '正在保存…' : '保存宠物池'}</button></footer></form>
 }
 
 function EntityEditor({ projectId, staticDemo, city, petContent, gameContent, draft, saving, onChange, onCancel, onSave }: { projectId: string; staticDemo: boolean; city: City; petContent: PetContentPet[]; gameContent: GameContentGame[]; draft: EntityDraft; saving: boolean; onChange: (value: EntityDraft) => void; onCancel: () => void; onSave: (event: FormEvent<HTMLFormElement>, draftOverride?: EntityDraft) => void }) {
@@ -553,7 +554,7 @@ function VocabularyTable({ city, saving, onSave }: { city: City; saving: boolean
   </>
 }
 
-function ContentPanel({ title, description, onAdd, children }: { title: string; description: string; onAdd?: () => void; children: ReactNode }) { return <section className="city-panel"><header><div><h3>{title}</h3><p>{description}</p></div>{onAdd && <button className="button ghost" onClick={onAdd}><Plus size={15} /> 新增{title}</button>}</header>{children}</section> }
+function ContentPanel({ title, description, onAdd, addLabel, children }: { title: string; description: string; onAdd?: () => void; addLabel?: string; children: ReactNode }) { return <section className="city-panel"><header><div><h3>{title}</h3><p>{description}</p></div>{onAdd && <button className="button ghost" onClick={onAdd}><Plus size={15} /> {addLabel || `新增${title}`}</button>}</header>{children}</section> }
 function SummaryCard({ icon, label, value, planned }: { icon: ReactNode; label: string; value: number; planned: number }) { return <article>{icon}<div><span>{label}</span><strong>{value}<small> / {planned || '未设计划'}</small></strong></div></article> }
 function CityContentInfluenceMap() {
   const internalNode = (title: string, description: string) => <article className="city-content-influence-node"><span><Layers3 size={17} /></span><div><strong>{title}</strong><small>{description}</small></div><ChevronRight size={15} /></article>

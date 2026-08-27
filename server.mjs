@@ -13,8 +13,8 @@ const dataRoot = join(workspaceRoot, 'project-data')
 const projectsRoot = join(dataRoot, 'projects')
 const incomingRoot = join(dataRoot, '.incoming')
 const defaultProjectId = 'project-default'
-const supportedModules = new Set(['character-motion', 'skill-vfx', 'pet-content'])
-const assetModules = new Set(['main-visual-design', 'character-design', 'character-motion', 'skill-design', 'skill-vfx', 'background-design', 'map-elements', 'game-ui', 'story-level-design', 'pet-content', 'unassigned'])
+const supportedModules = new Set(['character-motion', 'skill-vfx', 'pet-content', 'game-content'])
+const assetModules = new Set(['main-visual-design', 'character-design', 'character-motion', 'skill-design', 'skill-vfx', 'background-design', 'map-elements', 'game-ui', 'story-level-design', 'pet-content', 'game-content', 'unassigned'])
 const supportedExtensions = new Set(['.mp4', '.webm', '.mov', '.mkv', '.avi'])
 const supportedImageExtensions = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif'])
 const supportedAudioExtensions = new Set(['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac'])
@@ -359,7 +359,7 @@ function toPublicManifest(manifest) {
   }
 }
 
-async function loadManifests(projectId, moduleId, petId = '') {
+async function loadManifests(projectId, moduleId, petId = '', gameArtAssetId = '') {
   const sequencesRoot = join(await getProjectAssetFolder(projectId), 'frame-sequences')
   const entries = await readdir(sequencesRoot, { withFileTypes: true })
   const manifests = []
@@ -368,7 +368,7 @@ async function loadManifests(projectId, moduleId, petId = '') {
     try {
       const raw = await readFile(join(sequencesRoot, entry.name, 'manifest.json'), 'utf8')
       const manifest = JSON.parse(raw)
-      if ((!moduleId || manifest.moduleId === moduleId) && (!petId || manifest.petId === petId)) manifests.push(toPublicManifest(manifest))
+      if ((!moduleId || manifest.moduleId === moduleId) && (!petId || manifest.petId === petId) && (!gameArtAssetId || manifest.gameArtAssetId === gameArtAssetId)) manifests.push(toPublicManifest(manifest))
     } catch { /* Ignore incomplete sequence folders. */ }
   }
   return manifests.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -625,19 +625,36 @@ function normalizeCharacterSettingSheets(projectId, value) {
 
 const cityContentStatuses = new Set(['planning', 'production', 'review', 'ready', 'released'])
 const cityItemStatuses = new Set(['planned', 'in_progress', 'ready'])
-const chestTypes = new Set(['main', 'hidden'])
+const chestTypes = new Set(['main', 'hidden', 'final'])
 const chestWordRoles = new Set(['new', 'review', 'distractor'])
 const chestGamePurposes = new Set(['teach', 'review', 'final'])
 const petRarities = new Set(['common', 'rare'])
 const cityMusicScopes = new Set(['city', 'area'])
 const cityMusicTriggers = new Set(['default', 'exploration', 'chest', 'completion'])
+const defaultCommonGameArtAssetIds = new Set(['clue-panel-background', 'clue-top-status-bar', 'clue-progress-indicator', 'clue-option-card', 'clue-listen-again-button', 'clue-exit-pause-button', 'clue-correct-feedback', 'clue-error-feedback', 'clue-unlock-animation', 'clue-new-player-overlay'])
+
+function chestTypeLabel(type) {
+  return type === 'main' ? '主线' : type === 'hidden' ? '隐藏' : '终点'
+}
 
 function petContentFile(projectId) {
   return join(getProjectFolder(projectId), 'pet-content.json')
 }
 
+function defaultPetActionStandards() {
+  const samplePetId = 'pet_drac_sant_jordi_montblanc'
+  return [
+    ['idle', '待机', '宠物展示和非交互状态的基础循环动作。', '温和呼吸起伏 → 缓慢眨眼 → 轻微摆尾或局部装饰摆动 → 回到起始姿态，循环流畅无跳变。', true, '20260824T152954-039ac307'],
+    ['reveal', '获得出场', '玩家获得宠物时的展示动作，用于奖励确认。', '光效聚拢 → 宠物出现并落稳 → 表情确认 → 保持展示姿态。', false, '20260825142809-reveal2'],
+    ['hatch', '孵化', '宠物由蛋或容器中孵化出现的动作。', '容器轻微震动 → 裂纹或光效出现 → 宠物破壳／探出 → 落稳。', false, '20260825142809-hatch1'],
+    ['interaction-jump', '互动蹦跳', '点击宠物或获得互动反馈时的轻量动作。', '预备压缩 → 轻微蹦跳 → 自然落地 → 回到待机。', false, '20260825142809-jump3'],
+    ['rare-reveal', '稀有度出场', '稀有宠物的强化获得展示动作。', '稀有度光效聚焦 → 宠物出场 → 金色粒子收束 → 保持展示姿态。', false, '20260825142809-rare5'],
+    ['merge', '三合一合成', '三只同类宠物合成升级时的结果展示动作。', '三道能量汇聚 → 合成闪光 → 结果宠物出现 → 落稳并回到待机。', false, '20260825142809-merge4'],
+  ].map(([id, name, description, actionContent, loop, sampleSequenceId]) => ({ id, name, description, actionContent, loop, samplePetId, sampleSequenceId, soundEffect: normalizeActionSoundEffect() }))
+}
+
 function defaultPetContent(projectId) {
-  return { schemaVersion: 1, projectId, updatedAt: '', pets: [] }
+  return { schemaVersion: 2, projectId, updatedAt: '', pets: [], actionStandards: defaultPetActionStandards() }
 }
 
 async function assertPetExists(projectId, petId) {
@@ -647,12 +664,71 @@ async function assertPetExists(projectId, petId) {
   if (!content.pets.some((pet) => pet.id === petId)) throw new Error('当前宠物不存在，请先保存宠物内容。')
 }
 
+async function assertGameArtAssetExists(projectId, gameArtAssetId) {
+  const content = existsSync(gameContentFile(projectId))
+    ? normalizeGameContent(projectId, JSON.parse(await readFile(gameContentFile(projectId), 'utf8')))
+    : defaultGameContent(projectId)
+  if (!content.artAssets.some((asset) => asset.id === gameArtAssetId)) throw new Error('当前游戏美术素材不存在，请先保存素材基本信息。')
+}
+
 function gameContentFile(projectId) {
   return join(getProjectFolder(projectId), 'game-content.json')
 }
 
+function defaultGameArtAssets() {
+  const rows = [
+    ['common', 'clue-panel-background', '解谜面板背景', '进入解谜后的全屏／半屏面板，温暖米白底 + 金色圆角边框。', '', '默认／弹出动画'],
+    ['common', 'clue-top-status-bar', '顶部状态栏', '显示当前题型图标 + 题目进度（如 2/5）。', '', '—'],
+    ['common', 'clue-progress-indicator', '进度指示器', '3–5 个圆点，已答为金色填充，当前为金色描边，未答为灰金。', '', '3 题／4 题／5 题三种布局'],
+    ['common', 'clue-option-card', '选项卡片通用底', '圆角卡片，米白底 + 深棕描边，可点击态。', '', '默认／悬停／按下／正确／错误'],
+    ['common', 'clue-listen-again-button', '“再听一遍”按钮', '喇叭图标 + 文字，常驻可点。', '', '默认／按下／禁用'],
+    ['common', 'clue-exit-pause-button', '退出／暂停按钮', '左上角返回，需二次确认“确定离开？宝箱保持上锁”。', '', '默认／按下'],
+    ['common', 'clue-correct-feedback', '正确反馈特效', '金色闪光粒子 + 轻微描边 + 上扬音效视觉化。', '', '粒子序列帧'],
+    ['common', 'clue-error-feedback', '错误反馈特效', '柔和灰色抖动 + 向导小精灵提示气泡“再试一次”。', '', '抖动动画'],
+    ['common', 'clue-unlock-animation', '锁扣解开动画', '全部答对后，宝箱锁扣旋转弹开 + 金光迸发。', '', '序列帧动画'],
+    ['common', 'clue-new-player-overlay', '新手引导遮罩', '首次解谜时的半透明遮罩 + 手指引导 + 文字提示。', '', '逐步提示 3–4 步'],
+    ['clue-teaching', 'clue-card-panel', '线索卡面板', '可左右滑动的卡片容器，顶部显示“学会这些词就能打开宝箱”。', '1 套', '默认'],
+    ['clue-teaching', 'clue-word-card-front', '词汇卡正面', '西语原文（大字）+ 中文释义（小字）+ 配图 + 发音按钮。', '每词 1 张，每宝箱 2–4 张', '可翻页'],
+    ['clue-teaching', 'clue-word-illustration', '词汇配图', '每个新词对应的手绘风格插图（如 rojo = 红色苹果，gato = 猫）。', '每词 1 张，是最大美术工作量', '静态配图'],
+    ['clue-teaching', 'clue-pronunciation-button', '发音按钮', '喇叭图标，点击播放西语发音。', '1 个', '默认／播放中（声波动画）'],
+    ['clue-teaching', 'clue-page-slider-indicator', '翻页／滑动指示器', '底部小圆点显示当前第几张。', '2／3／4 词三种', '默认／当前'],
+    ['clue-teaching', 'clue-start-challenge-button', '“开始挑战”按钮', '教学完成后出现，金色高亮大按钮。', '1 个', '默认／按下'],
+  ]
+  return rows.map(([group, id, name, description, quantity, variants]) => ({ id, group, name, description, quantity, variants, assetId: '', imageAssetIds: [], primaryImageAssetId: '', status: 'planned', updatedAt: '' }))
+}
+
+function defaultGameManagedArtAssets(gameName) {
+  const rows = {
+    '听力开锁': [
+      [17, '语音播放按钮', '大喇叭图标居中／顶部，点击播放目标词发音。', '默认／按下／禁用'],
+      [18, '播放中状态', '喇叭图标 + 声波扩散动画 + “听一听”文字。', '播放中动效'],
+      [19, '3 个图片选项', '每题 3 张配图卡片，1 张正确 + 2 张干扰项，从词汇配图库复用。', '默认／正确／干扰'],
+      [20, '选项选中态', '点击后卡片金色描边高亮，等待判定。', '选中态'],
+    ],
+    '跟读开锁': [
+      [21, '目标词展示卡', '居中显示当前要跟读的西语词（大字）+ 中文小字 + 音节分隔提示。', '默认'],
+      [22, '麦克风大按钮', '圆形麦克风图标，金色发光，提示“按住说话”或“点击开始”。', '默认／按下／禁用'],
+      [23, '录音中状态', '麦克风变红／金色脉冲 + 实时音量波形条动画 + “正在听…”。', '录音中动效'],
+      [24, '识别中状态', '旋转加载圈 + “识别中…”。', '识别中动效'],
+      [25, '识别成功', '绿色对勾 + 目标词高亮 + 正确特效。', '成功反馈'],
+      [26, '识别失败提示', '柔和灰色“没听清，再试一次” + 麦克风按钮重新可点。', '失败反馈'],
+      [27, '“换一题”按钮', '连续 3 次未识别后出现，切换为听选题。', '条件出现'],
+    ],
+    '图文配对': [
+      [28, '图片槽位', '上方排列 2–4 张配图，带虚线边框占位。', '2／3／4 槽位'],
+      [29, '单词卡（可拖拽）', '下方排列 2–4 张西语单词卡，圆角可拖拽。', '2／3／4 张'],
+      [30, '拖拽中状态', '单词卡跟随手指／鼠标，半透明 + 轻微放大 + 阴影。', '拖拽动效'],
+      [31, '槽位悬停态', '单词卡拖到图片上方时，槽位金色高亮描边。', '悬停态'],
+      [32, '匹配成功', '单词卡吸附到图片下方 + 金色闪光 + 两者锁定。', '成功反馈'],
+      [33, '匹配失败', '单词卡弹回原位 + 柔和灰色抖动，不消失，可重试。', '失败反馈'],
+      [34, '全部完成', '所有配对完成后金光汇聚 + 锁扣解开。', '完成动效'],
+    ],
+  }
+  return (rows[gameName] || []).map(([order, name, description, variants]) => ({ id: `${gameName}-${order}`, order, name, description, variants, assetId: '', status: 'planned' }))
+}
+
 function defaultGameContent(projectId) {
-  return { schemaVersion: 1, projectId, updatedAt: '', games: [] }
+  return { schemaVersion: 4, projectId, updatedAt: '', games: [], artAssets: defaultGameArtAssets() }
 }
 
 function cityContentFile(projectId) {
@@ -660,7 +736,7 @@ function cityContentFile(projectId) {
 }
 
 function defaultCityContent(projectId) {
-  return { schemaVersion: 6, projectId, updatedAt: '', cities: [] }
+  return { schemaVersion: 7, projectId, updatedAt: '', cities: [] }
 }
 
 function cleanCityText(value, maxLength = 120) {
@@ -675,6 +751,15 @@ function cleanCityId(value, fallback) {
 function cleanCityStringList(value, maxItems = 100, maxLength = 80) {
   if (!Array.isArray(value)) return []
   return value.map((item) => cleanCityText(item, maxLength)).filter(Boolean).slice(0, maxItems)
+}
+
+function normalizeActionSoundEffect(value) {
+  return {
+    resourceRef: cleanCityText(value?.resourceRef, 260),
+    audioUrl: cleanCityText(value?.audioUrl, 320),
+    originalName: cleanCityText(value?.originalName, 180),
+    updatedAt: cleanCityText(value?.updatedAt, 80),
+  }
 }
 
 function normalizePetContent(projectId, value) {
@@ -706,32 +791,123 @@ function normalizePetContent(projectId, value) {
       updatedAt: new Date().toISOString(),
     }
   })
+  const persistedActionStandards = Array.isArray(value?.actionStandards) ? value.actionStandards : []
+  const actionStandardSource = Number(value?.schemaVersion || 0) < 2
+    ? [...persistedActionStandards, ...defaultPetActionStandards().filter((standard) => !persistedActionStandards.some((existing) => existing?.id === standard.id))]
+    : persistedActionStandards
+  if (actionStandardSource.length > 80) throw new Error('宠物动作标准最多包含 80 项。')
+  const standardIds = new Set()
+  const actionStandards = actionStandardSource.map((standard, index) => {
+    let id = cleanCityId(standard?.id, `pet_action_${index + 1}`)
+    if (standardIds.has(id)) id = `${id}_${index + 1}`
+    standardIds.add(id)
+    const rawAnimationParameters = standard?.animationParameters && typeof standard.animationParameters === 'object' ? standard.animationParameters : {}
+    const animationParameters = normalizeAnimationParameters({
+      ...rawAnimationParameters,
+      duration: rawAnimationParameters.duration || (standard?.loop ? '5 秒（循环）' : '5 秒（一次性）'),
+      actionContent: standard?.actionContent || rawAnimationParameters.actionContent,
+      style: rawAnimationParameters.style || '继承项目主视觉的材质、左上主光、柔和环境光与干净接地阴影。',
+    })
+    return {
+      id,
+      name: cleanCityText(standard?.name, 100),
+      description: cleanCityText(standard?.description, 500),
+      actionContent: cleanCityText(animationParameters.actionContent, 1200),
+      loop: Boolean(standard?.loop),
+      samplePetId: cleanCityText(standard?.samplePetId, 80),
+      sampleSequenceId: cleanCityText(standard?.sampleSequenceId, 80),
+      animationParameters,
+      soundEffect: normalizeActionSoundEffect(standard?.soundEffect),
+    }
+  })
   if (normalizedPets.some((pet) => !pet.spanishName || !pet.chineseName)) throw new Error('每条宠物内容都必须填写西语名和中文名。')
   if (normalizedPets.some((pet) => pet.status === 'ready' && pet.imageAssetIds.length === 0)) throw new Error('宠物标记为已就绪前，至少需要关联一张设计形象图。')
-  return { schemaVersion: 1, projectId, updatedAt: new Date().toISOString(), pets: normalizedPets }
+  if (actionStandards.some((standard) => !standard.name || !standard.description || !standard.actionContent)) throw new Error('每项宠物动作标准都必须填写名称、用途说明和动作内容。')
+  return { schemaVersion: 2, projectId, updatedAt: new Date().toISOString(), pets: normalizedPets, actionStandards }
 }
 
 function normalizeGameContent(projectId, value) {
   const games = Array.isArray(value?.games) ? value.games : []
+  const persistedArtAssets = Array.isArray(value?.artAssets) ? value.artAssets : defaultGameArtAssets()
+  const artAssets = Number(value?.schemaVersion || 0) < 4
+    ? [...persistedArtAssets, ...defaultGameArtAssets().filter((asset) => !persistedArtAssets.some((existing) => existing?.id === asset.id))]
+    : persistedArtAssets
   if (games.length > 300) throw new Error('游戏内容最多包含 300 条记录。')
+  if (artAssets.length > 600) throw new Error('游戏美术素材最多包含 600 条记录。')
   const seenIds = new Set()
   const normalizedGames = games.map((game, index) => {
     let id = cleanCityId(game?.id, `game_${index + 1}`)
     if (seenIds.has(id)) id = `${id}_${index + 1}`
     seenIds.add(id)
+    const name = cleanCityText(game?.name, 100)
+    const category = cleanCityText(game?.category, 80)
+    const sourceManagedAssets = Array.isArray(game?.artAssets) ? game.artAssets : defaultGameManagedArtAssets(name || category)
+    const seenManagedAssetIds = new Set()
+    const managedArtAssets = sourceManagedAssets.slice(0, 120).map((asset, assetIndex) => {
+      let id = cleanCityId(asset?.id, `${cleanCityId(game?.id, `game_${index + 1}`)}_art_${assetIndex + 1}`)
+      if (seenManagedAssetIds.has(id)) id = `${id}_${assetIndex + 1}`
+      seenManagedAssetIds.add(id)
+      const imageAssetIds = [...new Set([
+        ...cleanCityStringList(asset?.imageAssetIds, 12),
+        cleanCityText(asset?.primaryImageAssetId, 80),
+        cleanCityText(asset?.assetId, 80),
+      ].filter((assetId) => /^asset-\d{13}-[a-f0-9]{8}$/i.test(assetId)))]
+      const preferredPrimaryImageId = cleanCityText(asset?.primaryImageAssetId, 80)
+      const primaryImageAssetId = imageAssetIds.includes(preferredPrimaryImageId) ? preferredPrimaryImageId : imageAssetIds[0] || ''
+      return {
+        id,
+        order: Math.min(999, Math.max(1, Math.round(parseNumber(asset?.order, assetIndex + 1)))),
+        name: cleanCityText(asset?.name, 100),
+        description: cleanCityText(asset?.description, 800),
+        variants: cleanCityText(asset?.variants, 240),
+        imageAssetIds,
+        primaryImageAssetId,
+        assetId: primaryImageAssetId || cleanCityText(asset?.assetId, 120),
+        status: cityItemStatuses.has(asset?.status) ? asset.status : 'planned',
+      }
+    })
     return {
       id,
-      name: cleanCityText(game?.name, 100),
-      category: cleanCityText(game?.category, 80),
+      name,
+      category,
       description: cleanCityText(game?.description, 600),
       ruleReference: cleanCityText(game?.ruleReference, 120),
       assetId: cleanCityText(game?.assetId, 80),
       status: cityItemStatuses.has(game?.status) ? game.status : 'planned',
       updatedAt: new Date().toISOString(),
+      artAssets: managedArtAssets,
+    }
+  })
+  const seenArtAssetIds = new Set()
+  const normalizedArtAssets = artAssets.map((asset, index) => {
+    let id = cleanCityId(asset?.id, `game_art_${index + 1}`)
+    if (seenArtAssetIds.has(id)) id = `${id}_${index + 1}`
+    seenArtAssetIds.add(id)
+    const imageAssetIds = [...new Set([
+      ...cleanCityStringList(asset?.imageAssetIds, 12),
+      cleanCityText(asset?.primaryImageAssetId, 120),
+      cleanCityText(asset?.assetId, 120),
+    ].filter((assetId) => /^asset-\d{13}-[a-f0-9]{8}$/i.test(assetId)))]
+    const preferredPrimaryImageId = cleanCityText(asset?.primaryImageAssetId, 120)
+    const primaryImageAssetId = imageAssetIds.includes(preferredPrimaryImageId) ? preferredPrimaryImageId : imageAssetIds[0] || ''
+    return {
+      id,
+      group: asset?.group === 'common' || defaultCommonGameArtAssetIds.has(id) ? 'common' : 'clue-teaching',
+      name: cleanCityText(asset?.name, 100),
+      description: cleanCityText(asset?.description, 800),
+      quantity: cleanCityText(asset?.quantity, 160),
+      variants: cleanCityText(asset?.variants, 240),
+      imageAssetIds,
+      primaryImageAssetId,
+      assetId: primaryImageAssetId,
+      status: cityItemStatuses.has(asset?.status) ? asset.status : 'planned',
+      updatedAt: new Date().toISOString(),
     }
   })
   if (normalizedGames.some((game) => !game.name || !game.category)) throw new Error('每条游戏内容都必须填写名称和类型。')
-  return { schemaVersion: 1, projectId, updatedAt: new Date().toISOString(), games: normalizedGames }
+  if (normalizedGames.some((game) => game.artAssets.some((asset) => !asset.name || !asset.description))) throw new Error('每项游戏专属美术内容都必须填写名称和说明。')
+  if (normalizedArtAssets.some((asset) => !asset.name || !asset.description)) throw new Error('每条游戏美术素材都必须填写名称和说明。')
+  return { schemaVersion: 4, projectId, updatedAt: new Date().toISOString(), games: normalizedGames, artAssets: normalizedArtAssets }
 }
 
 function normalizeCityContent(projectId, value) {
@@ -752,10 +928,12 @@ function normalizeCityContent(projectId, value) {
       status: cityItemStatuses.has(area?.status) ? area.status : 'planned',
     }))
     const chests = normalizeItems(city?.chests, 300, (chest, index) => {
-      const type = chestTypes.has(chest?.type) ? chest.type : 'main'
+      const sourceId = cleanCityText(chest?.id, 80)
+      const sourceName = cleanCityText(chest?.name, 100)
+      const type = chestTypes.has(chest?.type) ? chest.type : sourceId.includes('final') || sourceName.includes('终点') ? 'final' : 'main'
       return {
-        id: cleanCityId(chest?.id, `${id}_chest_${index + 1}`),
-        name: cleanCityText(chest?.name, 100),
+        id: cleanCityId(sourceId, `${id}_chest_${index + 1}`),
+        name: sourceName,
         areaId: cleanCityText(chest?.areaId, 80),
         type,
         culturalNote: cleanCityText(chest?.culturalNote, 600),
@@ -890,19 +1068,19 @@ function normalizeCityContent(projectId, value) {
         const entries = city.pets.filter((pet) => pet.enabled && pet.chestType === chestType)
         if (!entries.length) continue
         const total = Math.round(entries.reduce((sum, pet) => sum + pet.weight, 0) * 100) / 100
-        if (total !== 100) throw new Error(`城市“${city.name}”的${chestType === 'main' ? '主线' : '隐藏'}宝箱宠物掉落概率合计为 ${total}%，可接入或发布前必须为 100%。`)
+        if (total !== 100) throw new Error(`城市“${city.name}”的${chestTypeLabel(chestType)}宝箱宠物掉落概率合计为 ${total}%，可接入或发布前必须为 100%。`)
       }
       for (const chestType of new Set(city.chests.map((chest) => chest.type))) {
         const gameIdsForType = city.games.filter((game) => game.chestType === chestType).map((game) => game.id)
         const links = city.gameWordLinks.filter((link) => gameIdsForType.includes(link.gameId))
         const newWordCount = links.filter((link) => link.role === 'new').length
         if (chestType === 'main' && (newWordCount < 2 || newWordCount > 4)) throw new Error(`主线宝箱类型必须配置 2–4 个新词。`)
-        if (chestType !== 'main' && newWordCount > 0) throw new Error('隐藏宝箱类型不能引入新词，只能复现已学词。')
-        if (!gameIdsForType.length) throw new Error(`${chestType === 'main' ? '主线' : '隐藏'}宝箱类型尚未配置语言小游戏。`)
+        if (chestType !== 'main' && newWordCount > 0) throw new Error(`${chestTypeLabel(chestType)}宝箱类型不能引入新词，只能复现已学词。`)
+        if (!gameIdsForType.length) throw new Error(`${chestTypeLabel(chestType)}宝箱类型尚未配置语言小游戏。`)
       }
     }
   }
-  return { schemaVersion: 6, projectId, updatedAt: new Date().toISOString(), cities: normalizedCities }
+  return { schemaVersion: 7, projectId, updatedAt: new Date().toISOString(), cities: normalizedCities }
 }
 
 async function validateCityCatalogReferences(projectId, content) {
@@ -1493,12 +1671,75 @@ app.put('/api/projects/:projectId/pet-content', async (request, response) => {
   }
 })
 
+app.post('/api/projects/:projectId/pet-action-standards/:actionId/sound-effect', audioUpload.single('audio'), async (request, response) => {
+  const file = request.file
+  if (!file) return response.status(400).json({ error: '请选择 MP3、WAV、OGG、M4A、AAC 或 FLAC 音频文件。' })
+  let targetFolder = ''
+  try {
+    const projectId = assertProjectId(request.params.projectId)
+    const actionId = cleanCityId(request.params.actionId, '')
+    if (!actionId) throw new Error('动作标准 ID 无效。')
+    const project = await readProject(projectId)
+    const extension = extname(file.originalname).toLowerCase()
+    if (!supportedAudioExtensions.has(extension)) throw new Error('音频格式不受支持。')
+    const filePath = petContentFile(projectId)
+    const content = existsSync(filePath) ? normalizePetContent(projectId, JSON.parse(await readFile(filePath, 'utf8'))) : defaultPetContent(projectId)
+    const standardIndex = content.actionStandards.findIndex((standard) => standard.id === actionId)
+    if (standardIndex < 0) throw new Error('未找到该动作标准，请先保存动作标准清单。')
+    const assetRoot = await getProjectAssetFolder(projectId)
+    targetFolder = join(assetRoot, 'assets', 'source', 'pet-action-sound-effects', actionId)
+    await rm(targetFolder, { recursive: true, force: true })
+    await mkdir(targetFolder, { recursive: true })
+    const fileName = `source${extension}`
+    await rename(file.path, join(targetFolder, fileName))
+    const updatedAt = new Date().toISOString()
+    const resourceRef = `assets/source/pet-action-sound-effects/${actionId}/${fileName}`
+    const soundEffect = { resourceRef, audioUrl: `/project-assets/${projectId}/${resourceRef}`, originalName: normalizeUploadedFileName(file.originalname), updatedAt }
+    content.actionStandards[standardIndex] = { ...content.actionStandards[standardIndex], soundEffect }
+    content.updatedAt = updatedAt
+    await writeFile(join(targetFolder, 'audio.json'), `${JSON.stringify({ schemaVersion: 1, projectId, actionId, originalName: soundEffect.originalName, fileName, size: file.size, createdAt: updatedAt }, null, 2)}\n`, 'utf8')
+    await writeJsonAtomic(filePath, content)
+    project.updatedAt = updatedAt
+    await writeJsonAtomic(join(getProjectFolder(projectId), 'project.json'), project)
+    response.status(201).json({ soundEffect, content })
+  } catch (error) {
+    if (file.path && existsSync(file.path)) await rm(file.path, { force: true })
+    if (targetFolder) await rm(targetFolder, { recursive: true, force: true })
+    response.status(400).json({ error: error instanceof Error ? error.message : '动作音效上传失败。' })
+  }
+})
+
+app.delete('/api/projects/:projectId/pet-action-standards/:actionId/sound-effect', async (request, response) => {
+  try {
+    const projectId = assertProjectId(request.params.projectId)
+    const actionId = cleanCityId(request.params.actionId, '')
+    if (!actionId) throw new Error('动作标准 ID 无效。')
+    const project = await readProject(projectId)
+    const filePath = petContentFile(projectId)
+    const content = existsSync(filePath) ? normalizePetContent(projectId, JSON.parse(await readFile(filePath, 'utf8'))) : defaultPetContent(projectId)
+    const standardIndex = content.actionStandards.findIndex((standard) => standard.id === actionId)
+    if (standardIndex < 0) throw new Error('未找到该动作标准。')
+    await rm(join(await getProjectAssetFolder(projectId), 'assets', 'source', 'pet-action-sound-effects', actionId), { recursive: true, force: true })
+    const updatedAt = new Date().toISOString()
+    const soundEffect = normalizeActionSoundEffect()
+    content.actionStandards[standardIndex] = { ...content.actionStandards[standardIndex], soundEffect }
+    content.updatedAt = updatedAt
+    await writeJsonAtomic(filePath, content)
+    project.updatedAt = updatedAt
+    await writeJsonAtomic(join(getProjectFolder(projectId), 'project.json'), project)
+    response.json({ ok: true, soundEffect, content })
+  } catch (error) {
+    response.status(400).json({ error: error instanceof Error ? error.message : '动作音效删除失败。' })
+  }
+})
+
 app.get('/api/projects/:projectId/game-content', async (request, response) => {
   try {
     const projectId = assertProjectId(request.params.projectId)
     await readProject(projectId)
     const filePath = gameContentFile(projectId)
-    response.json(existsSync(filePath) ? JSON.parse(await readFile(filePath, 'utf8')) : defaultGameContent(projectId))
+    const content = existsSync(filePath) ? JSON.parse(await readFile(filePath, 'utf8')) : defaultGameContent(projectId)
+    response.json(normalizeGameContent(projectId, content))
   } catch (error) {
     response.status(404).json({ error: error instanceof Error ? error.message : '游戏内容读取失败。' })
   }
@@ -1805,9 +2046,11 @@ app.get('/api/frame-sequences', async (request, response) => {
     await readProject(projectId)
     const moduleId = String(request.query.moduleId || '')
     const petId = String(request.query.petId || '').trim()
+    const gameArtAssetId = String(request.query.gameArtAssetId || '').trim()
     if (moduleId && !supportedModules.has(moduleId)) throw new Error('不支持的模块。')
     if (petId && moduleId !== 'pet-content') throw new Error('宠物序列帧只能在宠物内容管理中读取。')
-    response.json(await loadManifests(projectId, moduleId, petId))
+    if (gameArtAssetId && moduleId !== 'game-content') throw new Error('游戏美术素材序列帧只能在游戏管理中读取。')
+    response.json(await loadManifests(projectId, moduleId, petId, gameArtAssetId))
   } catch (error) {
     response.status(400).json({ error: error instanceof Error ? error.message : '无法读取序列帧。' })
   }
@@ -1877,6 +2120,7 @@ app.post('/api/frame-sequences/:id/promote', async (request, response) => {
       projectId,
       moduleId: source.moduleId,
       ...(source.petId ? { petId: source.petId } : {}),
+      ...(source.gameArtAssetId ? { gameArtAssetId: source.gameArtAssetId } : {}),
       name,
       createdAt: new Date().toISOString(),
       sourceSequenceId: source.id,
@@ -1911,8 +2155,14 @@ app.post('/api/frame-sequences/upload-images', frameImageUpload.array('frames', 
     await readProject(projectId)
     const moduleId = String(request.body.moduleId || '')
     const petId = String(request.body.petId || '').trim()
-    if (moduleId !== 'pet-content' || !petId) throw new Error('直接上传序列帧只能关联到已保存的宠物。')
-    await assertPetExists(projectId, petId)
+    const gameArtAssetId = String(request.body.gameArtAssetId || '').trim()
+    if (moduleId === 'pet-content') {
+      if (!petId) throw new Error('直接上传序列帧只能关联到已保存的宠物。')
+      await assertPetExists(projectId, petId)
+    } else if (moduleId === 'game-content') {
+      if (!gameArtAssetId) throw new Error('请先选择要关联序列帧的游戏美术素材。')
+      await assertGameArtAssetExists(projectId, gameArtAssetId)
+    } else throw new Error('直接上传序列帧只支持宠物内容和游戏管理。')
 
     const fps = parseNumber(request.body.fps, 12)
     if (fps < 1 || fps > 60) throw new Error('采样帧率必须在 1 到 60 FPS 之间。')
@@ -1935,7 +2185,8 @@ app.post('/api/frame-sequences/upload-images', frameImageUpload.array('frames', 
       id,
       projectId,
       moduleId,
-      petId,
+      ...(petId ? { petId } : {}),
+      ...(gameArtAssetId ? { gameArtAssetId } : {}),
       sourceType: 'uploaded-png-sequence',
       name: cleanName(request.body.name),
       createdAt: new Date().toISOString(),
@@ -1974,10 +2225,14 @@ app.post('/api/frame-sequences', upload.single('video'), async (request, respons
     const moduleId = String(request.body.moduleId || '')
     if (!supportedModules.has(moduleId)) throw new Error('不支持在此模块中制作序列帧。')
     const petId = String(request.body.petId || '').trim()
+    const gameArtAssetId = String(request.body.gameArtAssetId || '').trim()
     if (moduleId === 'pet-content') {
       if (!petId) throw new Error('请选择要关联序列帧的宠物。')
       await assertPetExists(projectId, petId)
-    } else if (petId) throw new Error('只有宠物内容管理可以关联宠物序列帧。')
+    } else if (moduleId === 'game-content') {
+      if (!gameArtAssetId) throw new Error('请选择要关联序列帧的游戏美术素材。')
+      await assertGameArtAssetExists(projectId, gameArtAssetId)
+    } else if (petId || gameArtAssetId) throw new Error('当前模块不支持关联对象序列帧。')
 
     const fps = parseNumber(request.body.fps, 12)
     const startTime = parseNumber(request.body.startTime, 0)
@@ -2021,6 +2276,7 @@ app.post('/api/frame-sequences', upload.single('video'), async (request, respons
       projectId,
       moduleId,
       ...(petId ? { petId } : {}),
+      ...(gameArtAssetId ? { gameArtAssetId } : {}),
       sourceType: 'video-to-frames',
       name: cleanName(request.body.name),
       createdAt: new Date().toISOString(),
