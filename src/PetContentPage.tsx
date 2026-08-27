@@ -263,7 +263,7 @@ function PetActionStandardsEditor({ projectId, staticDemo, standards, persistedA
         <header className="pet-action-standard-card-header"><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{standard.name || '未命名动作'}</strong><small>{standard.loop ? '循环动作' : '一次性动作'} · {standard.description || '待填写用途说明'}</small></div></header>
         <div className="pet-action-standard-fields">
           <div className="pet-action-standard-section-heading">基础信息与样例</div>
-          <label><span>稳定 ID</span><input value={standard.id} onChange={(event) => update(standard.id, { id: event.target.value })} /></label>
+          <label><span>稳定 ID</span><input value={standard.id} disabled={Boolean(standard.soundEffect?.audioUrl)} title={standard.soundEffect?.audioUrl ? '请先删除已关联音效，才能修改动作 ID。' : undefined} onChange={(event) => update(standard.id, { id: event.target.value })} /></label>
           <label><span>动作名称 *</span><input value={standard.name} onChange={(event) => update(standard.id, { name: event.target.value })} /></label>
           <label className="full"><span>用途说明 *</span><input value={standard.description} onChange={(event) => update(standard.id, { description: event.target.value })} /></label>
           <label className="pet-action-standard-loop"><input type="checkbox" checked={standard.loop} onChange={(event) => update(standard.id, { loop: event.target.checked })} /><span>循环播放</span></label>

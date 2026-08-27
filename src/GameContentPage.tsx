@@ -1,20 +1,38 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowRight, Check, CircleAlert, ClipboardList, Film, Gamepad2, Image as ImageIcon, ImagePlus, Layers3, LoaderCircle, MapPinned, Palette, Pause, PencilLine, Play, Plus, RotateCcw, Save, Star, Trash2, Upload, X } from 'lucide-react'
+import { ArrowRight, Check, CircleAlert, ClipboardList, Film, Gamepad2, Image as ImageIcon, ImagePlus, Layers3, LoaderCircle, MapPinned, Palette, Pause, PencilLine, Play, Plus, RotateCcw, Save, Star, Trash2, Upload, Volume2, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { ArtModule } from './data/modules'
 
 type GameStatus = 'planned' | 'in_progress' | 'ready'
 type ArtAssetGroup = 'common' | 'clue-teaching'
 type ImageAsset = { id: string; name: string; originalName: string; imageUrl: string; width: number; height: number; status: string }
-type GameManagedArtAsset = { id: string; order: number; name: string; description: string; variants: string; assetId: string; imageAssetIds: string[]; primaryImageAssetId: string; status: GameStatus }
+type MediaRequirements = { animation: boolean; sound: boolean }
+type SoundEffect = { resourceRef: string; audioUrl: string; originalName: string; trigger: string; volume: number; updatedAt: string }
+type GameManagedArtAsset = { id: string; order: number; name: string; description: string; variants: string; assetId: string; imageAssetIds: string[]; primaryImageAssetId: string; dynamicImageAssetIds: string[]; mediaRequirements: MediaRequirements; soundEffect: SoundEffect; status: GameStatus }
 type Game = { id: string; name: string; category: string; description: string; ruleReference: string; assetId: string; status: GameStatus; updatedAt: string; artAssets: GameManagedArtAsset[] }
-type GameArtAsset = { id: string; group: ArtAssetGroup; name: string; description: string; quantity: string; variants: string; assetId: string; imageAssetIds: string[]; primaryImageAssetId: string; status: GameStatus; updatedAt: string }
+type GameArtAsset = { id: string; group: ArtAssetGroup; name: string; description: string; quantity: string; variants: string; assetId: string; imageAssetIds: string[]; primaryImageAssetId: string; dynamicImageAssetIds: string[]; mediaRequirements: MediaRequirements; soundEffect: SoundEffect; status: GameStatus; updatedAt: string }
 type GameFrameSequence = { id: string; name: string; sourceType: string; sourceOriginalName?: string; sourceUrl?: string; manifestUrl?: string; frameUrls: string[]; fps: number; width: number; height: number; frameCount: number; duration: number; outputDirectory?: string; createdAt?: string }
 type GameContent = { schemaVersion: number; projectId: string; updatedAt: string; games: Game[]; artAssets: GameArtAsset[] }
 const statusCopy: Record<GameStatus, string> = { planned: '待制作', in_progress: '制作中', ready: '已就绪' }
 const assetGroupCopy: Record<ArtAssetGroup, string> = { common: '通用游戏美术素材', 'clue-teaching': '线索卡教学阶段素材' }
 const defaultCommonArtAssetIds = new Set(['clue-panel-background', 'clue-top-status-bar', 'clue-progress-indicator', 'clue-option-card', 'clue-listen-again-button', 'clue-exit-pause-button', 'clue-correct-feedback', 'clue-error-feedback', 'clue-unlock-animation', 'clue-new-player-overlay'])
+const blankSoundEffect = (): SoundEffect => ({ resourceRef: '', audioUrl: '', originalName: '', trigger: '', volume: 100, updatedAt: '' })
+const defaultMediaRequirements = (name: string, variants: string): MediaRequirements => {
+  const text = `${name} ${variants}`
+  return {
+    animation: /动效|动画|序列帧|播放中|录音中|识别中|闪烁|脉冲|抖动/.test(text),
+    sound: /语音|发音|播放|麦克风|正确反馈|错误反馈|识别成功|识别失败|匹配成功|匹配失败|全部完成|锁扣解开|解锁/.test(text),
+  }
+}
+const normalizeMediaRequirements = (value: unknown, name: string, variants: string): MediaRequirements => {
+  if (value && typeof value === 'object') return { animation: Boolean((value as MediaRequirements).animation), sound: Boolean((value as MediaRequirements).sound) }
+  return defaultMediaRequirements(name, variants)
+}
+const normalizeSoundEffect = (value: unknown): SoundEffect => {
+  const source = value && typeof value === 'object' ? value as Partial<SoundEffect> : {}
+  return { resourceRef: String(source.resourceRef || ''), audioUrl: String(source.audioUrl || ''), originalName: String(source.originalName || ''), trigger: String(source.trigger || ''), volume: Math.min(100, Math.max(0, Number(source.volume) || 100)), updatedAt: String(source.updatedAt || '') }
+}
 
 function presetGameArtAssets(gameName: string): GameManagedArtAsset[] {
   const rows: Record<string, Array<[number, string, string, string]>> = {
@@ -43,7 +61,7 @@ function presetGameArtAssets(gameName: string): GameManagedArtAsset[] {
       [34, '全部完成', '所有配对完成后金光汇聚 + 锁扣解开。', '完成动效'],
     ],
   }
-  return (rows[gameName] || []).map(([order, name, description, variants]) => ({ id: `${gameName}-${order}`, order, name, description, variants, assetId: '', imageAssetIds: [], primaryImageAssetId: '', status: 'planned' }))
+  return (rows[gameName] || []).map(([order, name, description, variants]) => ({ id: `${gameName}-${order}`, order, name, description, variants, assetId: '', imageAssetIds: [], primaryImageAssetId: '', dynamicImageAssetIds: [], mediaRequirements: defaultMediaRequirements(name, variants), soundEffect: blankSoundEffect(), status: 'planned' }))
 }
 
 function commonGameArtAssets(): GameArtAsset[] {
@@ -59,7 +77,7 @@ function commonGameArtAssets(): GameArtAsset[] {
     ['clue-unlock-animation', '锁扣解开动画', '全部答对后，宝箱锁扣旋转弹开 + 金光迸发。', '序列帧动画'],
     ['clue-new-player-overlay', '新手引导遮罩', '首次解谜时的半透明遮罩 + 手指引导 + 文字提示。', '逐步提示 3–4 步'],
   ]
-  return rows.map(([id, name, description, variants]) => ({ id, group: 'common', name, description, quantity: '', variants, assetId: '', imageAssetIds: [], primaryImageAssetId: '', status: 'planned', updatedAt: '' }))
+  return rows.map(([id, name, description, variants]) => ({ id, group: 'common', name, description, quantity: '', variants, assetId: '', imageAssetIds: [], primaryImageAssetId: '', dynamicImageAssetIds: [], mediaRequirements: defaultMediaRequirements(name, variants), soundEffect: blankSoundEffect(), status: 'planned', updatedAt: '' }))
 }
 
 function clueTeachingArtAssets(): GameArtAsset[] {
@@ -71,24 +89,24 @@ function clueTeachingArtAssets(): GameArtAsset[] {
     ['clue-page-slider-indicator', '翻页／滑动指示器', '底部小圆点显示当前第几张。', '2／3／4 词三种', '默认／当前'],
     ['clue-start-challenge-button', '“开始挑战”按钮', '教学完成后出现，金色高亮大按钮。', '1 个', '默认／按下'],
   ]
-  return rows.map(([id, name, description, quantity, variants]) => ({ id, group: 'clue-teaching', name, description, quantity, variants, assetId: '', imageAssetIds: [], primaryImageAssetId: '', status: 'planned', updatedAt: '' }))
+  return rows.map(([id, name, description, quantity, variants]) => ({ id, group: 'clue-teaching', name, description, quantity, variants, assetId: '', imageAssetIds: [], primaryImageAssetId: '', dynamicImageAssetIds: [], mediaRequirements: defaultMediaRequirements(name, variants), soundEffect: blankSoundEffect(), status: 'planned', updatedAt: '' }))
 }
 
 function defaultGameArtAssets() { return [...commonGameArtAssets(), ...clueTeachingArtAssets()] }
 
-function emptyContent(projectId: string): GameContent { return { schemaVersion: 4, projectId, updatedAt: '', games: [], artAssets: defaultGameArtAssets() } }
+function emptyContent(projectId: string): GameContent { return { schemaVersion: 5, projectId, updatedAt: '', games: [], artAssets: defaultGameArtAssets() } }
 function normalizeContent(projectId: string, value: GameContent | null): GameContent {
   const source = value || emptyContent(projectId)
   const persistedArtAssets = Array.isArray(source.artAssets) ? source.artAssets : defaultGameArtAssets()
   const artAssets = Number(source.schemaVersion || 0) < 4 ? [...persistedArtAssets, ...defaultGameArtAssets().filter((asset) => !persistedArtAssets.some((existing) => existing.id === asset.id))] : persistedArtAssets
   const games = (Array.isArray(source.games) ? source.games : []).map((game, index) => {
     const managedAssets = Array.isArray(game.artAssets) ? game.artAssets : presetGameArtAssets(game.name || game.category || '')
-    return { ...game, id: game.id || `game-${index + 1}`, name: game.name || '', category: game.category || '', description: game.description || '', ruleReference: game.ruleReference || '', assetId: game.assetId || '', status: statusCopy[game.status] ? game.status : 'planned', updatedAt: game.updatedAt || '', artAssets: managedAssets.map((asset, assetIndex) => { const imageAssetIds = Array.isArray(asset.imageAssetIds) ? asset.imageAssetIds : asset.assetId ? [asset.assetId] : []; const primaryImageAssetId = imageAssetIds.includes(asset.primaryImageAssetId) ? asset.primaryImageAssetId : imageAssetIds[0] || ''; return { id: asset.id || `${game.id || `game-${index + 1}`}-art-${assetIndex + 1}`, order: Number(asset.order) || assetIndex + 1, name: asset.name || '', description: asset.description || '', variants: asset.variants || '', assetId: primaryImageAssetId, imageAssetIds, primaryImageAssetId, status: statusCopy[asset.status] ? asset.status : 'planned' } }) }
+    return { ...game, id: game.id || `game-${index + 1}`, name: game.name || '', category: game.category || '', description: game.description || '', ruleReference: game.ruleReference || '', assetId: game.assetId || '', status: statusCopy[game.status] ? game.status : 'planned', updatedAt: game.updatedAt || '', artAssets: managedAssets.map((asset, assetIndex) => { const imageAssetIds = Array.isArray(asset.imageAssetIds) ? asset.imageAssetIds : asset.assetId ? [asset.assetId] : []; const primaryImageAssetId = imageAssetIds.includes(asset.primaryImageAssetId) ? asset.primaryImageAssetId : imageAssetIds[0] || ''; const name = asset.name || ''; const variants = asset.variants || ''; return { id: asset.id || `${game.id || `game-${index + 1}`}-art-${assetIndex + 1}`, order: Number(asset.order) || assetIndex + 1, name, description: asset.description || '', variants, assetId: primaryImageAssetId, imageAssetIds, primaryImageAssetId, dynamicImageAssetIds: Array.isArray(asset.dynamicImageAssetIds) ? asset.dynamicImageAssetIds.filter((id) => /^asset-\d{13}-[a-f0-9]{8}$/i.test(id || '')) : [], mediaRequirements: normalizeMediaRequirements(asset.mediaRequirements, name, variants), soundEffect: normalizeSoundEffect(asset.soundEffect), status: statusCopy[asset.status] ? asset.status : 'planned' } }) }
   })
-  return { ...source, schemaVersion: 4, projectId, games, artAssets: artAssets.map((asset, index) => { const id = asset.id || `game-art-${index + 1}`; const imageAssetIds = [...new Set([...(Array.isArray(asset.imageAssetIds) ? asset.imageAssetIds : []), asset.primaryImageAssetId, asset.assetId].filter((assetId) => /^asset-\d{13}-[a-f0-9]{8}$/i.test(assetId || '')))]; const primaryImageAssetId = imageAssetIds.includes(asset.primaryImageAssetId) ? asset.primaryImageAssetId : imageAssetIds[0] || ''; return { id, group: asset.group === 'common' || defaultCommonArtAssetIds.has(id) ? 'common' : 'clue-teaching', name: asset.name || '', description: asset.description || '', quantity: asset.quantity || '', variants: asset.variants || '', imageAssetIds, primaryImageAssetId, assetId: primaryImageAssetId, status: statusCopy[asset.status] ? asset.status : 'planned', updatedAt: asset.updatedAt || '' } }) }
+  return { ...source, schemaVersion: 5, projectId, games, artAssets: artAssets.map((asset, index) => { const id = asset.id || `game-art-${index + 1}`; const imageAssetIds = [...new Set([...(Array.isArray(asset.imageAssetIds) ? asset.imageAssetIds : []), asset.primaryImageAssetId, asset.assetId].filter((assetId) => /^asset-\d{13}-[a-f0-9]{8}$/i.test(assetId || '')))]; const primaryImageAssetId = imageAssetIds.includes(asset.primaryImageAssetId) ? asset.primaryImageAssetId : imageAssetIds[0] || ''; const name = asset.name || ''; const variants = asset.variants || ''; return { id, group: asset.group === 'common' || defaultCommonArtAssetIds.has(id) ? 'common' : 'clue-teaching', name, description: asset.description || '', quantity: asset.quantity || '', variants, imageAssetIds, primaryImageAssetId, assetId: primaryImageAssetId, dynamicImageAssetIds: Array.isArray(asset.dynamicImageAssetIds) ? asset.dynamicImageAssetIds.filter((assetId) => /^asset-\d{13}-[a-f0-9]{8}$/i.test(assetId || '')) : [], mediaRequirements: normalizeMediaRequirements(asset.mediaRequirements, name, variants), soundEffect: normalizeSoundEffect(asset.soundEffect), status: statusCopy[asset.status] ? asset.status : 'planned', updatedAt: asset.updatedAt || '' } }) }
 }
 function blankGame(): Game { return { id: `game_${Date.now()}`, name: '', category: '', description: '', ruleReference: '详细玩法设计', assetId: '', status: 'planned', updatedAt: '', artAssets: [] } }
-function blankArtAsset(group: ArtAssetGroup): GameArtAsset { return { id: `game_art_${Date.now()}`, group, name: '', description: '', quantity: '', variants: '', assetId: '', imageAssetIds: [], primaryImageAssetId: '', status: 'planned', updatedAt: '' } }
+function blankArtAsset(group: ArtAssetGroup): GameArtAsset { return { id: `game_art_${Date.now()}`, group, name: '', description: '', quantity: '', variants: '', assetId: '', imageAssetIds: [], primaryImageAssetId: '', dynamicImageAssetIds: [], mediaRequirements: { animation: false, sound: false }, soundEffect: blankSoundEffect(), status: 'planned', updatedAt: '' } }
 
 type DetailedGameplayReference = { sourceTitle: string; summary: string; items: Array<{ sectionTitle: string; text: string }> }
 
@@ -194,7 +212,7 @@ export function GameContentPage({ projectId, staticDemo, mainVisualModule, detai
   const persist = async (nextContent: GameContent, success: string) => {
     setSaving(true); setMessage(null)
     try {
-      const value = { ...nextContent, schemaVersion: 4, updatedAt: new Date().toISOString() }
+      const value = { ...nextContent, schemaVersion: 5, updatedAt: new Date().toISOString() }
       if (staticDemo) {
         window.localStorage.setItem(`artflow:game-content:${projectId}:v1`, JSON.stringify(value)); setContent(value)
       } else {
@@ -284,7 +302,7 @@ function GameEditor({ projectId, staticDemo, detailedGameplayModule, draft, imag
   const set = <K extends keyof Game>(key: K, value: Game[K]) => onChange({ ...game, [key]: value })
   const updateManagedAsset = (id: string, patch: Partial<GameManagedArtAsset>) => set('artAssets', game.artAssets.map((asset) => asset.id === id ? { ...asset, ...patch } : asset))
   const addManagedAsset = () => {
-    const asset = { id: `${game.id || 'game'}-art-${Date.now()}`, order: game.artAssets.length ? Math.max(...game.artAssets.map((item) => item.order)) + 1 : 1, name: '', description: '', variants: '', assetId: '', imageAssetIds: [], primaryImageAssetId: '', status: 'planned' } satisfies GameManagedArtAsset
+    const asset = { id: `${game.id || 'game'}-art-${Date.now()}`, order: game.artAssets.length ? Math.max(...game.artAssets.map((item) => item.order)) + 1 : 1, name: '', description: '', variants: '', assetId: '', imageAssetIds: [], primaryImageAssetId: '', dynamicImageAssetIds: [], mediaRequirements: { animation: false, sound: false }, soundEffect: blankSoundEffect(), status: 'planned' } satisfies GameManagedArtAsset
     set('artAssets', [...game.artAssets, asset]); setAssetDraftId(asset.id)
   }
   const removeManagedAsset = (id: string) => set('artAssets', game.artAssets.filter((asset) => asset.id !== id))
@@ -299,7 +317,63 @@ function GameDetailedGameplayReference({ reference }: { reference: DetailedGamep
 }
 
 function GameManagedArtPreview({ asset, image, onOpen }: { asset: GameManagedArtAsset; image?: ImageAsset; onOpen: () => void }) {
-  return <button type="button" className="game-managed-art-preview" onClick={onOpen}><div>{image ? <img src={image.imageUrl} alt={`${asset.name}预览`} /> : <ImageIcon size={25} />}{image && <span>已上传</span>}</div><footer><small>{String(asset.order).padStart(2, '0')} · {statusCopy[asset.status]}</small><strong>{asset.name || '未命名美术内容'}</strong><p>{asset.variants || '未填写状态／变体'}</p></footer></button>
+  const mediaRequirements = asset.mediaRequirements || defaultMediaRequirements(asset.name, asset.variants)
+  return <button type="button" className="game-managed-art-preview" onClick={onOpen}><div>{image ? <img src={image.imageUrl} alt={`${asset.name}预览`} /> : <ImageIcon size={25} />}{image && <span>已上传</span>}</div><footer><small>{String(asset.order).padStart(2, '0')} · {statusCopy[asset.status]}</small><strong>{asset.name || '未命名美术内容'}</strong><p>{asset.variants || '未填写状态／变体'}</p>{(mediaRequirements.animation || mediaRequirements.sound) && <i>{mediaRequirements.animation && <Film size={11} />}{mediaRequirements.sound && <Volume2 size={11} />}</i>}</footer></button>
+}
+
+function GameArtMediaRequirements({ value, onChange }: { value: MediaRequirements; onChange: (value: MediaRequirements) => void }) {
+  return <fieldset className="game-art-media-requirements"><legend>按需管理的媒体</legend><label><input type="checkbox" checked={value.animation} onChange={(event) => onChange({ ...value, animation: event.target.checked })} />需要动态素材</label><label><input type="checkbox" checked={value.sound} onChange={(event) => onChange({ ...value, sound: event.target.checked })} />需要关联音效</label><small>未勾选的静态素材只保留图片管理，不显示额外上传区域。</small></fieldset>
+}
+
+function GameArtDynamicImageManager({ assetId, staticDemo, imageAssets, dynamicImageAssetIds, onUpload, onChange }: { assetId: string; staticDemo: boolean; imageAssets: ImageAsset[]; dynamicImageAssetIds: string[]; onUpload: (files: File[]) => Promise<ImageAsset[]>; onChange: (ids: string[]) => void }) {
+  const [files, setFiles] = useState<File[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState('')
+  const dynamicAssets = imageAssets.filter((image) => dynamicImageAssetIds.includes(image.id))
+  const upload = async () => {
+    if (!files.length) return setError('请选择至少一个 GIF 动图。')
+    setUploading(true); setError('')
+    try {
+      const created = await onUpload(files)
+      onChange([...new Set([...dynamicImageAssetIds, ...created.map((image) => image.id)])])
+      setFiles([])
+    } catch (uploadError) { setError(uploadError instanceof Error ? uploadError.message : '动图上传失败。') } finally { setUploading(false) }
+  }
+  return <section className="game-art-detail-section game-art-dynamic-images"><header><div><Film size={18} /><span><strong>动图素材</strong><small>仅在本素材需要动态表现时管理 GIF；静态图片不会出现在此区域。</small></span></div><strong>{dynamicAssets.length} 个</strong></header>{staticDemo ? <p className="pet-image-demo">在线演示版不支持动图上传，请在本地平台中管理动态素材。</p> : <div className="pet-image-upload"><label htmlFor={`game-art-dynamic-upload-${assetId}`}><input id={`game-art-dynamic-upload-${assetId}`} type="file" accept="image/gif,.gif" multiple onChange={(event) => setFiles(Array.from(event.target.files || []))} /><Film size={18} /><span>{files.length ? `已选择 ${files.length} 个动图` : '选择 GIF 动图'}</span></label><button type="button" className="button primary" onClick={() => void upload()} disabled={uploading || files.length === 0}>{uploading ? <LoaderCircle className="spin" size={15} /> : <Upload size={15} />}{uploading ? '正在上传…' : '上传并关联'}</button></div>}{error && <p className="game-art-detail-error">{error}</p>}{dynamicAssets.length === 0 ? <div className="game-art-sequence-empty"><Film size={19} /> 尚未关联 GIF 动图。</div> : <div className="pet-image-grid">{dynamicAssets.map((image) => <article key={image.id}><img src={image.imageUrl} alt={`${image.name}动图预览`} /><div><strong>{image.name}</strong><small>{image.width}×{image.height}</small></div><footer><button type="button" onClick={() => onChange(dynamicImageAssetIds.filter((id) => id !== image.id))}><X size={13} /> 移除引用</button></footer></article>)}</div>}</section>
+}
+
+function GameArtSoundEffectManager({ projectId, staticDemo, target, value, onChange }: { projectId: string; staticDemo: boolean; target: { scope: 'global' | 'managed'; assetId: string; gameId?: string }; value: SoundEffect; onChange: (value: SoundEffect) => void }) {
+  const [file, setFile] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState('')
+  const upload = async () => {
+    if (!file) return setError('请选择一段音效。')
+    setUploading(true); setError('')
+    try {
+      const formData = new FormData()
+      formData.append('audio', file); formData.append('scope', target.scope); formData.append('assetId', target.assetId); formData.append('projectId', projectId)
+      if (target.gameId) formData.append('gameId', target.gameId)
+      const response = await fetch(`/api/projects/${projectId}/game-art-sound-effects`, { method: 'POST', body: formData })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || '音效上传失败。')
+      onChange({ ...value, ...result.soundEffect, trigger: value.trigger, volume: value.volume })
+      setFile(null)
+    } catch (uploadError) { setError(uploadError instanceof Error ? uploadError.message : '音效上传失败。') } finally { setUploading(false) }
+  }
+  const remove = async () => {
+    if (!value.resourceRef) return onChange(blankSoundEffect())
+    if (!window.confirm(`确定移除音效“${value.originalName || '未命名音效'}”吗？源文件也会从项目中删除。`)) return
+    setError('')
+    try {
+      const params = new URLSearchParams({ scope: target.scope, assetId: target.assetId })
+      if (target.gameId) params.set('gameId', target.gameId)
+      const response = await fetch(`/api/projects/${projectId}/game-art-sound-effects?${params}`, { method: 'DELETE' })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || '音效删除失败。')
+      onChange(blankSoundEffect())
+    } catch (removeError) { setError(removeError instanceof Error ? removeError.message : '音效删除失败。') }
+  }
+  return <section className="game-art-detail-section game-art-sound-manager"><header><div><Volume2 size={18} /><span><strong>关联音效</strong><small>仅管理当前交互的提示音、点击音或反馈音；词汇发音与背景音乐应引用所属内容模块。</small></span></div><strong>{value.audioUrl ? '已关联' : '未关联'}</strong></header><div className="game-art-sound-fields"><label><span>触发时机</span><input value={value.trigger} maxLength={120} onChange={(event) => onChange({ ...value, trigger: event.target.value })} placeholder="例如：点击选项时" /></label><label><span>音量</span><input type="number" min="0" max="100" value={value.volume} onChange={(event) => onChange({ ...value, volume: Math.min(100, Math.max(0, Number(event.target.value) || 0)) })} /><i>%</i></label></div>{value.audioUrl && <div className="game-art-sound-preview"><audio controls preload="metadata" src={value.audioUrl}>当前浏览器不支持音效试听。</audio><small>{value.originalName || value.resourceRef}</small><button type="button" className="button danger" onClick={() => void remove()}><Trash2 size={14} /> 移除音效</button></div>}{staticDemo ? <p className="pet-image-demo">在线演示版不支持音效上传，请在本地平台中管理音效素材。</p> : <div className="pet-image-upload"><label htmlFor={`game-art-sound-upload-${target.scope}-${target.gameId || 'shared'}-${target.assetId}`}><input id={`game-art-sound-upload-${target.scope}-${target.gameId || 'shared'}-${target.assetId}`} type="file" accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4,audio/aac,audio/flac,.mp3,.wav,.ogg,.m4a,.aac,.flac" onChange={(event) => setFile(event.target.files?.[0] || null)} /><Volume2 size={18} /><span>{file ? file.name : '选择音效文件'}</span></label><button type="button" className="button primary" onClick={() => void upload()} disabled={uploading || !file}>{uploading ? <LoaderCircle className="spin" size={15} /> : <Upload size={15} />}{uploading ? '正在上传…' : '上传并关联'}</button></div>}{error && <p className="game-art-detail-error">{error}</p>}</section>
 }
 
 function GameManagedArtAssetDialog({ projectId, staticDemo, game, asset, imageAssets, onUpload, onChange, onRemove, onClose }: { projectId: string; staticDemo: boolean; game: Game; asset: GameManagedArtAsset; imageAssets: ImageAsset[]; onUpload: (game: Game, asset: GameManagedArtAsset, files: File[]) => Promise<ImageAsset[]>; onChange: (value: GameManagedArtAsset) => void; onRemove: () => void; onClose: () => void }) {
@@ -327,7 +401,7 @@ function GameManagedArtAssetDialog({ projectId, staticDemo, game, asset, imageAs
     const primaryImageAssetId = asset.primaryImageAssetId === assetId ? imageAssetIds[0] || '' : asset.primaryImageAssetId
     onChange({ ...asset, imageAssetIds, primaryImageAssetId, assetId: primaryImageAssetId })
   }
-  return <div className="game-managed-art-backdrop" role="presentation"><section className="game-managed-art-dialog" role="dialog" aria-modal="true" aria-labelledby="game-managed-art-title"><header><div><span>GAME ART CONTENT SETUP</span><h3 id="game-managed-art-title">{asset.name || '新增美术内容'}</h3><p>素材图片作为当前游戏条目的 source 资产保存；色彩、材质、光照与禁止项继承项目主视觉设计。</p></div><button type="button" onClick={onClose} aria-label="关闭美术内容设定"><X size={18} /></button></header><div className="game-managed-art-dialog-body"><div className="game-managed-art-fields"><label><span>序号</span><input type="number" min="1" value={asset.order} onChange={(event) => set('order', Number(event.target.value) || 1)} /></label><label><span>素材名称 *</span><input value={asset.name} onChange={(event) => set('name', event.target.value)} /></label><label><span>状态／变体</span><input value={asset.variants} onChange={(event) => set('variants', event.target.value)} placeholder="默认／按下／动效" /></label><label><span>制作状态</span><select value={asset.status} onChange={(event) => set('status', event.target.value as GameStatus)}>{Object.entries(statusCopy).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="full"><span>素材说明 *</span><textarea rows={3} value={asset.description} onChange={(event) => set('description', event.target.value)} /></label><label className="full"><span>主视觉继承约束</span><p className="game-art-editor-note"><CircleAlert size={15} />此处不保存独立风格规则。上传、制作和审核均须遵循本项目主视觉；主视觉变更后需要重新复核。</p></label></div><section className="game-managed-art-image-manager"><header><div><ImageIcon size={18} /><span><strong>素材预览与上传</strong><small>支持 PNG、JPG、WebP、GIF；上传后保存在当前项目的游戏美术 source 素材目录。</small></span></div><strong>{linkedAssets.length} 张</strong></header>{staticDemo ? <p className="pet-image-demo">在线演示版不支持文件上传；请在本地平台中管理游戏美术素材。</p> : <div className="pet-image-upload"><label htmlFor={`game-managed-art-upload-${asset.id}`}><input id={`game-managed-art-upload-${asset.id}`} type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple onChange={(event) => setFiles(Array.from(event.target.files || []))} /><ImagePlus size={18} /><span>{files.length ? `已选择 ${files.length} 张素材` : '选择图片或动图素材'}</span></label><button type="button" className="button primary" onClick={() => void attachImages()} disabled={uploading || files.length === 0}>{uploading ? <LoaderCircle className="spin" size={15} /> : <Upload size={15} />}{uploading ? '正在上传…' : '上传并关联'}</button></div>}{error && <p className="pet-image-error">{error}</p>}{linkedAssets.length === 0 ? <div className="pet-image-empty"><ImageIcon size={22} /> 尚未关联素材；上传后可在此选择卡片预览图。</div> : <div className="pet-image-grid">{linkedAssets.map((image) => <article className={image.id === asset.primaryImageAssetId ? 'is-primary' : ''} key={image.id}><img src={image.imageUrl} alt={image.name} /><div><strong>{image.name}</strong><small>{image.width}×{image.height}</small></div><footer><button type="button" onClick={() => choosePrimary(image.id)} disabled={image.id === asset.primaryImageAssetId}><Star size={13} fill={image.id === asset.primaryImageAssetId ? 'currentColor' : 'none'} />{image.id === asset.primaryImageAssetId ? '主预览图' : '设为主图'}</button><button type="button" onClick={() => removeReference(image.id)}><X size={13} /> 移除引用</button></footer></article>)}</div>}</section></div><footer><button type="button" className="button danger" onClick={onRemove}><Trash2 size={15} /> 删除美术内容</button><button type="button" className="button primary" onClick={onClose}><Check size={15} /> 完成设定</button></footer></section></div>
+  return <div className="game-managed-art-backdrop" role="presentation"><section className="game-managed-art-dialog" role="dialog" aria-modal="true" aria-labelledby="game-managed-art-title"><header><div><span>GAME ART CONTENT SETUP</span><h3 id="game-managed-art-title">{asset.name || '新增美术内容'}</h3><p>静态图片始终归属当前游戏条目；仅按需开启动图或音效管理，色彩、材质、光照与禁止项继承项目主视觉设计。</p></div><button type="button" onClick={onClose} aria-label="关闭美术内容设定"><X size={18} /></button></header><div className="game-managed-art-dialog-body"><div className="game-managed-art-fields"><label><span>序号</span><input type="number" min="1" value={asset.order} onChange={(event) => set('order', Number(event.target.value) || 1)} /></label><label><span>素材名称 *</span><input value={asset.name} onChange={(event) => set('name', event.target.value)} /></label><label><span>状态／变体</span><input value={asset.variants} onChange={(event) => set('variants', event.target.value)} placeholder="默认／按下／动效" /></label><label><span>制作状态</span><select value={asset.status} onChange={(event) => set('status', event.target.value as GameStatus)}>{Object.entries(statusCopy).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="full"><span>素材说明 *</span><textarea rows={3} value={asset.description} onChange={(event) => set('description', event.target.value)} /></label><label className="full"><span>主视觉继承约束</span><p className="game-art-editor-note"><CircleAlert size={15} />此处不保存独立风格规则。上传、制作和审核均须遵循本项目主视觉；主视觉变更后需要重新复核。</p></label></div><GameArtMediaRequirements value={asset.mediaRequirements} onChange={(mediaRequirements) => set('mediaRequirements', mediaRequirements)} /><section className="game-managed-art-image-manager"><header><div><ImageIcon size={18} /><span><strong>静态图片预览与上传</strong><small>支持 PNG、JPG、WebP；上传后保存在当前项目的游戏美术 source 素材目录。</small></span></div><strong>{linkedAssets.length} 张</strong></header>{staticDemo ? <p className="pet-image-demo">在线演示版不支持文件上传；请在本地平台中管理游戏美术素材。</p> : <div className="pet-image-upload"><label htmlFor={`game-managed-art-upload-${asset.id}`}><input id={`game-managed-art-upload-${asset.id}`} type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={(event) => setFiles(Array.from(event.target.files || []))} /><ImagePlus size={18} /><span>{files.length ? `已选择 ${files.length} 张图片` : '选择静态图片'}</span></label><button type="button" className="button primary" onClick={() => void attachImages()} disabled={uploading || files.length === 0}>{uploading ? <LoaderCircle className="spin" size={15} /> : <Upload size={15} />}{uploading ? '正在上传…' : '上传并关联'}</button></div>}{error && <p className="pet-image-error">{error}</p>}{linkedAssets.length === 0 ? <div className="pet-image-empty"><ImageIcon size={22} /> 尚未关联静态图片；上传后可在此选择卡片预览图。</div> : <div className="pet-image-grid">{linkedAssets.map((image) => <article className={image.id === asset.primaryImageAssetId ? 'is-primary' : ''} key={image.id}><img src={image.imageUrl} alt={image.name} /><div><strong>{image.name}</strong><small>{image.width}×{image.height}</small></div><footer><button type="button" onClick={() => choosePrimary(image.id)} disabled={image.id === asset.primaryImageAssetId}><Star size={13} fill={image.id === asset.primaryImageAssetId ? 'currentColor' : 'none'} />{image.id === asset.primaryImageAssetId ? '主预览图' : '设为主图'}</button><button type="button" onClick={() => removeReference(image.id)}><X size={13} /> 移除引用</button></footer></article>)}</div>}</section>{asset.mediaRequirements.animation && <GameArtDynamicImageManager assetId={asset.id} staticDemo={staticDemo} imageAssets={imageAssets} dynamicImageAssetIds={asset.dynamicImageAssetIds} onUpload={(dynamicFiles) => onUpload(game, asset, dynamicFiles)} onChange={(dynamicImageAssetIds) => set('dynamicImageAssetIds', dynamicImageAssetIds)} />}{asset.mediaRequirements.sound && <GameArtSoundEffectManager projectId={projectId} staticDemo={staticDemo} target={{ scope: 'managed', gameId: game.id, assetId: asset.id }} value={asset.soundEffect} onChange={(soundEffect) => set('soundEffect', soundEffect)} />}</div><footer><button type="button" className="button danger" onClick={onRemove}><Trash2 size={15} /> 删除美术内容</button><button type="button" className="button primary" onClick={onClose}><Check size={15} /> 完成设定</button></footer></section></div>
 }
 
 type GameArtAssetEditorProps = { projectId: string; staticDemo: boolean; imageAssets: ImageAsset[]; draft: { isNew: boolean; value: GameArtAsset }; saving: boolean; onUpload: (asset: GameArtAsset, files: File[]) => Promise<ImageAsset[]>; onChange: (value: GameArtAsset) => void; onCancel: () => void; onRemove: () => void; onSave: (event: FormEvent<HTMLFormElement>) => void }
@@ -340,7 +414,7 @@ function GameArtAssetEditor(props: GameArtAssetEditorProps) {
     const status = (Object.entries(statusCopy) as Array<[GameStatus, string]>).find(([, label]) => label === value.status)?.[0] || 'planned'
     onChange({ ...value, group, status })
   }
-  return <GameArtAssetDetailForm {...props} draft={{ ...draft, value: translated }} onChange={handleChange} />
+  return <div className={`game-art-optional-media ${draft.value.mediaRequirements.animation ? '' : 'without-animation'}`}><GameArtMediaRequirements value={draft.value.mediaRequirements} onChange={(mediaRequirements) => onChange({ ...draft.value, mediaRequirements })} />{draft.value.mediaRequirements.animation && <GameArtDynamicImageManager assetId={draft.value.id} staticDemo={props.staticDemo} imageAssets={props.imageAssets} dynamicImageAssetIds={draft.value.dynamicImageAssetIds} onUpload={(files) => props.onUpload(draft.value, files)} onChange={(dynamicImageAssetIds) => onChange({ ...draft.value, dynamicImageAssetIds })} />}{draft.value.mediaRequirements.sound && <GameArtSoundEffectManager projectId={props.projectId} staticDemo={props.staticDemo} target={{ scope: 'global', assetId: draft.value.id }} value={draft.value.soundEffect} onChange={(soundEffect) => onChange({ ...draft.value, soundEffect })} />}<GameArtAssetDetailForm {...props} draft={{ ...draft, value: translated }} onChange={handleChange} /></div>
 }
 
 function GameArtAssetDetailForm({ projectId, staticDemo, imageAssets, draft, saving, onUpload, onChange, onCancel, onRemove, onSave }: GameArtAssetEditorProps) {

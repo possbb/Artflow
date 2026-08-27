@@ -1,0 +1,492 @@
+{
+  "schemaVersion": 4,
+  "projectId": "project-1787020640273-9de50495",
+  "updatedAt": "2026-08-27T11:59:22.830Z",
+  "games": [
+    {
+      "id": "game_1787757778850",
+      "name": "听力开锁",
+      "category": "听力开锁",
+      "description": "",
+      "ruleReference": "详细玩法设计",
+      "assetId": "",
+      "status": "planned",
+      "updatedAt": "2026-08-27T11:59:22.830Z",
+      "artAssets": [
+        {
+          "id": "-17",
+          "order": 17,
+          "name": "语音播放按钮",
+          "description": "大喇叭图标居中／顶部，点击播放目标词发音。",
+          "variants": "默认／按下／禁用",
+          "imageAssetIds": [],
+          "primaryImageAssetId": "",
+          "assetId": "",
+          "status": "planned"
+        },
+        {
+          "id": "-18",
+          "order": 18,
+          "name": "播放中状态",
+          "description": "喇叭图标 + 声波扩散动画 + “听一听”文字。",
+          "variants": "播放中动效",
+          "imageAssetIds": [],
+          "primaryImageAssetId": "",
+          "assetId": "",
+          "status": "planned"
+        },
+        {
+          "id": "-19",
+          "order": 19,
+          "name": "3 个图片选项",
+          "description": "每题 3 张配图卡片，1 张正确 + 2 张干扰项，从词汇配图库复用。",
+          "variants": "默认／正确／干扰",
+          "imageAssetIds": [],
+          "primaryImageAssetId": "",
+          "assetId": "",
+          "status": "planned"
+        },
+        {
+          "id": "-20",
+          "order": 20,
+          "name": "选项选中态",
+          "description": "点击后卡片金色描边高亮，等待判定。",
+          "variants": "选中态",
+          "imageAssetIds": [],
+          "primaryImageAssetId": "",
+          "assetId": "",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "id": "game_1787757842311",
+      "name": "跟读开锁",
+      "category": "跟读开锁",
+      "description": "",
+      "ruleReference": "详细玩法设计",
+      "assetId": "",
+      "status": "planned",
+      "updatedAt": "2026-08-27T11:59:22.830Z",
+      "artAssets": [
+        {
+          "id": "-21",
+          "order": 21,
+          "name": "目标词展示卡",
+          "description": "居中显示当前要跟读的西语词（大字）+ 中文小字 + 音节分隔提示。",
+          "variants": "默认",
+          "imageAssetIds": [],
+          "primaryImageAssetId": "",
+          "assetId": "",
+          "status": "planned"
+        },
+        {
+          "id": "-22",
+          "order": 22,
+          "name": "麦克风大按钮",
+          "description": "圆形麦克风图标，金色发光，提示“按住说话”或“点击开始”。",
+          "variants": "默认／按下／禁用",
+          "imageAssetIds": [],
+          "primaryImageAssetId": "",
+          "assetId": "",
+          "status": "planned"
+        },
+        {
+          "id": "-23",
+          "order": 23,
+          "name": "录音中状态",
+          "description": "麦克风变红／金色脉冲 + 实时音量波形条动画 + “正在听…”。",
+          "variants": "录音中动效",
+          "imageAssetIds": [],
+          "primaryImageAssetId": "",
+          "assetId": "",
+          "status": "planned"
+        },
+        {
+          "id": "-24",
+          "order": 24,
+          "name": "识别中状态",
+          "description": "旋转加载圈 + “识别中…”。",
+          "variants": "识别中动效",
+          "imageAssetIds": [],
+          "primaryImageAssetId": "",
+          "assetId": "",
+          "status": "planned"
+        },
+        {
+          "id": "-25",
+          "order": 25,
+          "name": "识别成功",
+          "description": "绿色对勾 + 目标词高亮 + 正确特效。",
+          "variants": "成功反馈",
+          "imageAssetIds": [],
+          "primaryImageAssetId": "",
+          "assetId": "",
+          "status": "planned"
+        },
+        {
+          "id": "-26",
+          "order": 26,
+          "name": "识别失败提示",
+          "description": "柔和灰色“没听清，再试一次” + 麦克风按钮重新可点。",
+          "variants": "失败反馈",
+          "imageAssetIds": [],
+          "primaryImageAssetId": "",
+          "assetId": "",
+          "status": "planned"
+        },
+        {
+          "id": "-27",
+          "order": 27,
+          "name": "“换一题”按钮",
+          "description": "连续 3 次未识别后出现，切换为听选题。",
+          "variants": "条件出现",
+          "imageAssetIds": [],
+          "primaryImageAssetId": "",
+          "assetId": "",
+          "status": "planned"
+        }
+      ]
+    },
+    {
+      "id": "game_1787757851610",
+      "name": "图文配对",
+      "category": "图文配对",
+      "description": "",
+      "ruleReference": "详细玩法设计",
+      "assetId": "",
+      "status": "planned",
+      "updatedAt": "2026-08-27T11:59:22.830Z",
+      "artAssets": [
+        {
+          "id": "-28",
+          "order": 28,
+          "name": "图片槽位",
+          "description": "上方排列 2–4 张配图，带虚线边框占位。",
+          "variants": "2／3／4 槽位",
+          "imageAssetIds": [],
+          "primaryImageAssetId": "",
+          "assetId": "",
+          "status": "planned"
+        },
+        {
+          "id": "-29",
+          "order": 29,
+          "name": "单词卡（可拖拽）",
+          "description": "下方排列 2–4 张西语单词卡，圆角可拖拽。",
+          "variants": "2／3／4 张",
+          "imageAssetIds": [],
+          "primaryImageAssetId": "",
+          "assetId": "",
+          "status": "planned"
+        },
+        {
+          "id": "-30",
+          "order": 30,
+          "name": "拖拽中状态",
+          "description": "单词卡跟随手指／鼠标，半透明 + 轻微放大 + 阴影。",
+          "variants": "拖拽动效",
+          "imageAssetIds": [],
+          "primaryImageAssetId": "",
+          "assetId": "",
+          "status": "planned"
+        },
+        {
+          "id": "-31",
+          "order": 31,
+          "name": "槽位悬停态",
+          "description": "单词卡拖到图片上方时，槽位金色高亮描边。",
+          "variants": "悬停态",
+          "imageAssetIds": [],
+          "primaryImageAssetId": "",
+          "assetId": "",
+          "status": "planned"
+        },
+        {
+          "id": "-32",
+          "order": 32,
+          "name": "匹配成功",
+          "description": "单词卡吸附到图片下方 + 金色闪光 + 两者锁定。",
+          "variants": "成功反馈",
+          "imageAssetIds": [],
+          "primaryImageAssetId": "",
+          "assetId": "",
+          "status": "planned"
+        },
+        {
+          "id": "-33",
+          "order": 33,
+          "name": "匹配失败",
+          "description": "单词卡弹回原位 + 柔和灰色抖动，不消失，可重试。",
+          "variants": "失败反馈",
+          "imageAssetIds": [],
+          "primaryImageAssetId": "",
+          "assetId": "",
+          "status": "planned"
+        },
+        {
+          "id": "-34",
+          "order": 34,
+          "name": "全部完成",
+          "description": "所有配对完成后金光汇聚 + 锁扣解开。",
+          "variants": "完成动效",
+          "imageAssetIds": [],
+          "primaryImageAssetId": "",
+          "assetId": "",
+          "status": "planned"
+        }
+      ]
+    }
+  ],
+  "artAssets": [
+    {
+      "id": "clue-panel-background",
+      "group": "common",
+      "name": "解谜面板背景",
+      "description": "进入解谜后的全屏／半屏面板，温暖米白底 + 金色圆角边框。",
+      "quantity": "3种状态",
+      "variants": "默认／弹出动画",
+      "imageAssetIds": [
+        "asset-1787831763990-be629951",
+        "asset-1787831782336-e4fdc739",
+        "asset-1787831782829-60d98da7"
+      ],
+      "primaryImageAssetId": "asset-1787831763990-be629951",
+      "assetId": "asset-1787831763990-be629951",
+      "status": "ready",
+      "updatedAt": "2026-08-27T11:59:22.830Z"
+    },
+    {
+      "id": "clue-top-status-bar",
+      "group": "common",
+      "name": "顶部状态栏",
+      "description": "显示当前题型图标 + 题目进度（如 2/5）。",
+      "quantity": "",
+      "variants": "—",
+      "imageAssetIds": [
+        "asset-1787831909929-0e86a7b5"
+      ],
+      "primaryImageAssetId": "asset-1787831909929-0e86a7b5",
+      "assetId": "asset-1787831909929-0e86a7b5",
+      "status": "ready",
+      "updatedAt": "2026-08-27T11:59:22.830Z"
+    },
+    {
+      "id": "clue-progress-indicator",
+      "group": "common",
+      "name": "进度指示器",
+      "description": "3–5 个圆点，已答为金色填充，当前为金色描边，未答为灰金。",
+      "quantity": "",
+      "variants": "3 题／4 题／5 题三种布局",
+      "imageAssetIds": [
+        "asset-1787831843437-e0c60e98",
+        "asset-1787831843917-e64c4395",
+        "asset-1787831844384-ac2a5b94"
+      ],
+      "primaryImageAssetId": "asset-1787831844384-ac2a5b94",
+      "assetId": "asset-1787831844384-ac2a5b94",
+      "status": "ready",
+      "updatedAt": "2026-08-27T11:59:22.830Z"
+    },
+    {
+      "id": "clue-option-card",
+      "group": "common",
+      "name": "选项卡片通用底",
+      "description": "圆角卡片，米白底 + 深棕描边，可点击态。",
+      "quantity": "",
+      "variants": "默认／悬停／按下／正确／错误",
+      "imageAssetIds": [
+        "asset-1787831861422-e1dbf217",
+        "asset-1787831861869-51a3f90f",
+        "asset-1787831862316-1f0cca1a",
+        "asset-1787831862782-898bb0a6"
+      ],
+      "primaryImageAssetId": "asset-1787831861422-e1dbf217",
+      "assetId": "asset-1787831861422-e1dbf217",
+      "status": "ready",
+      "updatedAt": "2026-08-27T11:59:22.830Z"
+    },
+    {
+      "id": "clue-listen-again-button",
+      "group": "common",
+      "name": "“再听一遍”按钮",
+      "description": "喇叭图标 + 文字，常驻可点。",
+      "quantity": "",
+      "variants": "默认／按下／禁用",
+      "imageAssetIds": [
+        "asset-1787831876495-5c97aa69"
+      ],
+      "primaryImageAssetId": "asset-1787831876495-5c97aa69",
+      "assetId": "asset-1787831876495-5c97aa69",
+      "status": "ready",
+      "updatedAt": "2026-08-27T11:59:22.830Z"
+    },
+    {
+      "id": "clue-exit-pause-button",
+      "group": "common",
+      "name": "退出／暂停按钮",
+      "description": "左上角返回，需二次确认“确定离开？宝箱保持上锁”。",
+      "quantity": "",
+      "variants": "默认／按下",
+      "imageAssetIds": [
+        "asset-1787831910492-41eab3a6"
+      ],
+      "primaryImageAssetId": "asset-1787831910492-41eab3a6",
+      "assetId": "asset-1787831910492-41eab3a6",
+      "status": "ready",
+      "updatedAt": "2026-08-27T11:59:22.830Z"
+    },
+    {
+      "id": "clue-correct-feedback",
+      "group": "common",
+      "name": "正确反馈特效",
+      "description": "金色闪光粒子 + 轻微描边 + 上扬音效视觉化。",
+      "quantity": "",
+      "variants": "粒子序列帧",
+      "imageAssetIds": [
+        "asset-1787831911089-26678567"
+      ],
+      "primaryImageAssetId": "asset-1787831911089-26678567",
+      "assetId": "asset-1787831911089-26678567",
+      "status": "ready",
+      "updatedAt": "2026-08-27T11:59:22.830Z"
+    },
+    {
+      "id": "clue-error-feedback",
+      "group": "common",
+      "name": "错误反馈特效",
+      "description": "柔和灰色抖动 + 向导小精灵提示气泡“再试一次”。",
+      "quantity": "",
+      "variants": "抖动动画",
+      "imageAssetIds": [
+        "asset-1787831911585-3c0adc4d"
+      ],
+      "primaryImageAssetId": "asset-1787831911585-3c0adc4d",
+      "assetId": "asset-1787831911585-3c0adc4d",
+      "status": "ready",
+      "updatedAt": "2026-08-27T11:59:22.830Z"
+    },
+    {
+      "id": "clue-unlock-animation",
+      "group": "common",
+      "name": "锁扣解开动画",
+      "description": "全部答对后，宝箱锁扣旋转弹开 + 金光迸发。",
+      "quantity": "",
+      "variants": "序列帧动画",
+      "imageAssetIds": [
+        "asset-1787831877693-d09a7f4f",
+        "asset-1787831878159-2e5dce51",
+        "asset-1787831878733-fe59ce29"
+      ],
+      "primaryImageAssetId": "asset-1787831877693-d09a7f4f",
+      "assetId": "asset-1787831877693-d09a7f4f",
+      "status": "ready",
+      "updatedAt": "2026-08-27T11:59:22.830Z"
+    },
+    {
+      "id": "clue-new-player-overlay",
+      "group": "common",
+      "name": "新手引导遮罩",
+      "description": "首次解谜时的半透明遮罩 + 手指引导 + 文字提示。",
+      "quantity": "",
+      "variants": "逐步提示 3–4 步",
+      "imageAssetIds": [
+        "asset-1787831923366-9a92762b"
+      ],
+      "primaryImageAssetId": "asset-1787831923366-9a92762b",
+      "assetId": "asset-1787831923366-9a92762b",
+      "status": "ready",
+      "updatedAt": "2026-08-27T11:59:22.830Z"
+    },
+    {
+      "id": "clue-card-panel",
+      "group": "clue-teaching",
+      "name": "线索卡面板",
+      "description": "可左右滑动的卡片容器，顶部显示“学会这些词就能打开宝箱”。",
+      "quantity": "1 套",
+      "variants": "默认",
+      "imageAssetIds": [
+        "asset-1787831923913-7ba47ae2"
+      ],
+      "primaryImageAssetId": "asset-1787831923913-7ba47ae2",
+      "assetId": "asset-1787831923913-7ba47ae2",
+      "status": "ready",
+      "updatedAt": "2026-08-27T11:59:22.830Z"
+    },
+    {
+      "id": "clue-word-card-front",
+      "group": "clue-teaching",
+      "name": "词汇卡正面",
+      "description": "西语原文（大字）+ 中文释义（小字）+ 配图 + 发音按钮。",
+      "quantity": "每词 1 张，每宝箱 2–4 张",
+      "variants": "可翻页",
+      "imageAssetIds": [
+        "asset-1787831924509-45d7cbbb"
+      ],
+      "primaryImageAssetId": "asset-1787831924509-45d7cbbb",
+      "assetId": "asset-1787831924509-45d7cbbb",
+      "status": "ready",
+      "updatedAt": "2026-08-27T11:59:22.830Z"
+    },
+    {
+      "id": "clue-word-illustration",
+      "group": "clue-teaching",
+      "name": "词汇配图",
+      "description": "每个新词对应的手绘风格插图（如 rojo = 红色苹果，gato = 猫）。",
+      "quantity": "每词 1 张，是最大美术工作量",
+      "variants": "静态配图",
+      "imageAssetIds": [
+        "asset-1787831925023-470af19d"
+      ],
+      "primaryImageAssetId": "asset-1787831925023-470af19d",
+      "assetId": "asset-1787831925023-470af19d",
+      "status": "ready",
+      "updatedAt": "2026-08-27T11:59:22.830Z"
+    },
+    {
+      "id": "clue-pronunciation-button",
+      "group": "clue-teaching",
+      "name": "发音按钮",
+      "description": "喇叭图标，点击播放西语发音。",
+      "quantity": "1 个",
+      "variants": "默认／播放中（声波动画）",
+      "imageAssetIds": [
+        "asset-1787831940433-90217809"
+      ],
+      "primaryImageAssetId": "asset-1787831940433-90217809",
+      "assetId": "asset-1787831940433-90217809",
+      "status": "ready",
+      "updatedAt": "2026-08-27T11:59:22.830Z"
+    },
+    {
+      "id": "clue-page-slider-indicator",
+      "group": "clue-teaching",
+      "name": "翻页／滑动指示器",
+      "description": "底部小圆点显示当前第几张。",
+      "quantity": "2／3／4 词三种",
+      "variants": "默认／当前",
+      "imageAssetIds": [
+        "asset-1787831962008-db66a4b6"
+      ],
+      "primaryImageAssetId": "asset-1787831962008-db66a4b6",
+      "assetId": "asset-1787831962008-db66a4b6",
+      "status": "ready",
+      "updatedAt": "2026-08-27T11:59:22.830Z"
+    },
+    {
+      "id": "clue-start-challenge-button",
+      "group": "clue-teaching",
+      "name": "“开始挑战”按钮",
+      "description": "教学完成后出现，金色高亮大按钮。",
+      "quantity": "1 个",
+      "variants": "默认／按下",
+      "imageAssetIds": [
+        "asset-1787831962632-d71a0462"
+      ],
+      "primaryImageAssetId": "asset-1787831962632-d71a0462",
+      "assetId": "asset-1787831962632-d71a0462",
+      "status": "ready",
+      "updatedAt": "2026-08-27T11:59:22.830Z"
+    }
+  ]
+}

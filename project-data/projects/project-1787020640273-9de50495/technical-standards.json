@@ -1,0 +1,194 @@
+{
+  "schemaVersion": 1,
+  "profileId": "spanish-adventure-tablet-v3",
+  "profileName": "西语冒险 · 平板优先 2.5D 技术美术规范",
+  "version": 5,
+  "updatedAt": "2026-08-22T16:33:05.356Z",
+  "engine": {
+    "name": "Godot",
+    "version": "Godot 4.7.1 stable；纵向切片期间引擎、导出模板与插件统一锁定此版本，升级必须单独建分支并重跑全部导出与真机门禁",
+    "renderer": "Mobile（iPad/Android 正式基线）/ Compatibility（Web）；Windows Steam先使用Mobile同源效果。禁止依赖Forward+独占效果，渲染器差异必须有截图对照",
+    "targetPlatform": "主要：iPadOS 16+与Android 9+平板；最低代表设备：Apple A14/4GB级iPad与Snapdragon 845/4GB级Android。次要：当前主流Web浏览器与Windows Steam",
+    "resourceRoot": "res://art",
+    "prefabExtension": ".tscn",
+    "targetFps": 60,
+    "minimumResolution": "1024×768",
+    "aspectRule": "以 4:3 的 1024×768 为最低基线；16:9 / 16:10 只扩展可视区域，不裁切关键 UI；适配刘海、圆角与系统安全区。",
+    "inputRule": "同一交互必须同时支持触屏点击、鼠标点击及键盘／手柄焦点；点击地面移动与点击物体交互不得依赖悬停态。",
+    "offlineRule": "探索、环境线索、语言解谜、发音播放、存档与跟读降级必须完全离线；原生端侧ASR不可用时依次尝试Vosk本地模型和听选题，不得调用云端识别。网络仅用于未来城市下载和更新。",
+    "contentPackMountRule": "首发巴塞罗那随核心应用安装。未来城市包经版本、SHA256与签名校验后，以res://content/cities/{city_id}/命名空间及replace_files=false挂载；必须在相关资源preload前完成。城市安装后永久保留，只允许更新和修复，不实现运行时卸载。",
+    "testDeviceRule": "每次发布候选至少覆盖1台最低代表iPad、1台最低代表Android、1台16:10 Android和1台开发PC；Web与Steam在进入对应发布里程碑后加入同等级回归矩阵。",
+    "performanceBudget": "最低代表平板在五片区最重场景、连续开箱、线索高亮与UI叠加条件下保持60fps；CPU/GPU帧时间P95均不超过16.7ms，不允许连续2帧超过33.3ms。",
+    "memoryBudget": "原生应用峰值内存不超过700MB，Web峰值不超过450MB，运行时纹理与顶点显存预算不超过256MB；片区切换后旧场景资源必须释放并回落到基线+15%以内。",
+    "loadBudget": "最低代表设备冷启动到可操作大地图不超过5秒，片区切换不超过2秒，题型面板出现不超过300ms，点击或触控视觉反馈不超过100ms；超过300ms的操作必须显示可取消进度。",
+    "packageBudget": "核心应用不含首发城市和ASR模型建议不超过250MB；巴塞罗那内容不超过80MB；Vosk西语模型及运行库不超过60MB。超预算必须记录原因并重新压测安装、首载和内存。"
+  },
+  "naming": {
+    "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*(?:_v\\d{3})?$",
+    "example": "bar_city_square_chest_01_v001",
+    "lowercaseRecommended": true,
+    "versionSuffix": "_v001",
+    "idRule": "业务 ID 使用小写 snake_case；城市、片区、宝箱、词汇、宠物分别保持唯一稳定 ID，显示名称与资源路径不得作为存档主键。",
+    "cityPackExample": "city_barcelona_v001.zip"
+  },
+  "import": {
+    "sourceRoot": "res://art/source",
+    "runtimeRoot": "res://art/runtime",
+    "characterSceneRoot": "res://art/characters/player",
+    "vfxSceneRoot": "res://art/vfx/interaction",
+    "uiRoot": "res://art/ui",
+    "textureFilter": "2.5D 场景与角色使用 Linear + mipmap；UI、图标与文字使用 Linear 且默认关闭 mipmap；像素材质仅在资产明确声明时使用 Nearest。",
+    "prefabRule": "角色、宠物、宝箱、交互物和 UI 页面各自对应可复用 .tscn；业务脚本只引用稳定资源 ID 或清单，不散落硬编码文件路径。",
+    "environmentSceneRoot": "res://art/environments/cities",
+    "petSceneRoot": "res://art/pets",
+    "audioRoot": "res://audio/voice/es",
+    "cityPackRoot": "user://content/cities/{city_id}/{version}/",
+    "textureCompression": "运行时纹理以移动端为基线：ASTC（支持设备）／ETC2 回退；UI 线稿、文字与透明边缘使用无损或高质量压缩。",
+    "cityPackStructure": "每个城市包必须包含 manifest.json、scenes/、vocab/、pets/、audio/、text/；包内资源不得依赖其他城市包，允许依赖版本化的共享核心库。",
+    "audioImportRule": "单词发音采用44.1kHz单声道MP3 96kbps或OGG quality 4；每词独立并按词汇ID命名。首发40词按片区8词分组预加载；Vosk西语模型属于核心应用，不重复打入城市包。",
+    "uiScalingRule": "以 1024×768、4:3 为设计基线，Godot Control 使用容器与锚点响应式布局；16:9 / 16:10 保持内容比例并扩展边缘留白。",
+    "touchTargetRule": "所有主要按钮、宝箱确认、麦克风、发音与家长设置入口的有效触控热区不小于 48×48dp；视觉图标可小于热区。",
+    "safeAreaRule": "顶栏、下载进度、关闭按钮和家长验证控件必须位于 DisplayServer 安全区内；不可只按固定像素边距定位。",
+    "fontRule": "字体资源必须覆盖西语重音字符 áéíóúüñ¿¡、中文及数字；正文缩放后不得截断，西语与中文不得依赖不同基线硬对齐。",
+    "worldScaleRule": "固定45°斜俯视采用2:1菱形逻辑网格，基准单元128×64px；1格作为导航和互动距离单位。1024×768、1.0x镜头下主角视觉高度控制在140-170px，脚底落在单元中心下半区。",
+    "cameraScaleRule": "镜头不可旋转；缩放1.0x-1.5x。主角默认位于视口中心下方约55%高度；常见4:3、16:10、16:9只扩展边缘可视区，主线地标与UI不得依赖额外边缘空间。",
+    "renderLayerRule": "地面0-99、低矮道具100-199、角色与可交互物使用YSort 200-399、前景遮挡400-499、世界空间交互动效500-599；UI独立CanvasLayer。层级只能由清单配置，不在场景脚本散落魔法数。",
+    "atlasRule": "运行时图集最大2048×2048；角色、宠物、环境线索、宝箱、UI分图集管理。单图集不得混合Linear与Nearest过滤需求；所有序列登记单元尺寸、帧数、方向、锚点和安全边距。",
+    "assetManifestRule": "所有运行时资产必须通过manifest登记稳定ID、source/runtime路径、版本、尺寸、Pivot、过滤、压缩、透明、所属城市、权利状态和验收证据；业务脚本只引用ID。",
+    "asrRuntimeRule": "ASRAdapter只暴露native_on_device、vosk_local、listening_fallback三态。Vosk二进制、模型版本、模型许可证、词表、内存和首载报告必须入库；录音缓冲在题目结束、取消、切后台或错误时立即释放。",
+    "audioConcurrencyRule": "同时播放上限24声部：BGM 1、环境2、西语发音1、UI/互动音效最多12，其余留给过渡与平台音频；同词发音重播先停止旧实例，切后台和暂停时按总线规则冻结或淡出。",
+    "aiHandoffStandardId": "TA-IMG-001",
+    "aiResponsibilityRule": "模型名称、模型版本、seed、参考图权重、steps、CFG、重绘强度与批次变量由主视觉或对应美术模块的结构化 Prompt 管理；技术美术规范只定义生成结果的入库、派生和运行时接入条件，不复制生成模型参数。",
+    "aiCanvasFormatRule": "TA-IMG-001：AI 概念源图的比例、生成尺寸与构图安全区由主视觉或对应模块 Prompt 定义。进入资产库前必须满足自动校验的允许格式和尺寸范围；运行时纹理边长不超过 2048。颜色纹理按 sRGB，遮罩、法线和数据纹理按 Linear。",
+    "aiAlphaDeliveryRule": "整幅概念图不要求透明通道；独立角色、宠物、道具、特效和 UI 图标按资产用途提供透明 PNG，并在运行时资产清单声明 Alpha 与混合方式。透明边缘不得出现白边、黑边或脏像素。",
+    "aiImportHandoffRule": "AI 源图先进入 res://art/source；通过美术审核后再裁切、拆分、缩放、清边并生成 res://art/runtime 派生资产。概念图不得直接作为运行时纹理；处理过程必须保留主体安全区、角色身份、构图和线条清晰度。",
+    "aiManifestEvidenceRule": "运行时资产清单登记稳定 ID、source/runtime 路径、版本、源图与运行时尺寸、色彩空间、Alpha、过滤、压缩和图集信息；本次使用的模型、模型版本、seed、参考图顺序、参考强度、生成日期和人工修改记录保存在资产生成证据中。",
+    "aiPromptReferenceRule": "主视觉和下游模块统一通过 TA-IMG-001 引用当前接入规范，不复制运行时尺寸、压缩或导入参数。技术规范版本变化后，受影响资产必须重新校验。"
+  },
+  "materials": {
+    "materialPrefix": "mat_",
+    "shaderPrefix": "shd_",
+    "uniformPrefix": "u_",
+    "allowedBlendModes": "Mix / Premultiplied Alpha；Add 仅用于点击、微光与开箱瞬时特效",
+    "shaderRule": "共享 CanvasItem Shader 与实例材质分离；禁止复制同源码 Shader；城市包只传参数和贴图，不内置同名共享 Shader 副本。",
+    "colorSpaceRule": "颜色纹理按 sRGB 导入；遮罩、法线与数据纹理按 Linear 导入；UI 与场景的色板必须使用同一批准色值。",
+    "mobileShaderRule": "移动端首发基线：单材质纹理采样建议不超过 4 次，禁用屏幕读取、无界循环和 Forward+ 独占特性；最终上限以最低目标平板真机压测冻结。",
+    "transparencyRule": "同一画面的大面积半透明叠层建议不超过 3 层；全屏模糊和多层粒子必须提供关闭或静态替代，避免移动端 overdraw。",
+    "accessibilityRule": "交互、解锁、下载与错误状态不得只靠红／绿区分，必须同时提供形状、图标、文字或明度差。"
+  },
+  "rigging": {
+    "maxBoneInfluences": 4,
+    "minimumWeight": 0.02,
+    "normalizeWeights": true,
+    "rootBoneName": "root",
+    "deformBoneSuffix": "_def",
+    "rule": "权重归一化；清理零权重与孤立顶点；同一顶点最多 4 骨影响。若使用纯序列帧，应记录画布、脚底、中心和安全边距而非伪造骨骼数据。",
+    "assetStrategy": "单一主角与宠物优先采用稳定的 2D 序列帧或 Skeleton2D；项目无战斗、装备和换装需求，不引入未被玩法需要的复杂 3D 骨架。",
+    "skeletonRule": "使用 Skeleton2D 时骨骼 ID 与层级跨动画版本保持稳定；不得通过负缩放翻转带骨骼角色；附件锚点需显式命名并随版本验证。",
+    "groundingRule": "固定 45° 斜俯视镜头下，主角行走帧必须锁定脚底基线、视觉中心和主体尺度；宠物待机需锁定接地点，禁止透明外框抖动。"
+  },
+  "animation": {
+    "defaultSampleFps": 30,
+    "maxSampleFps": 60,
+    "maxSequenceFrames": 240,
+    "compressionTolerance": 0.02,
+    "rootMotionRule": "点击目标后的世界位移由导航与角色控制器驱动；行走动画统一为原地循环，不使用 Root Motion，速度基线约 2 格／秒。",
+    "loopRule": "待机与行走循环首尾的脚底、尺度、亮度和轮廓连续；开箱、互动、奖励弹出为一次性动画，结束事件只能触发一次。",
+    "spritePlaybackRule": "首发基线：游戏渲染保持 60Hz；主角行走关键帧建议 12-18fps，待机 8-12fps，UI／开箱 VFX 24-30fps。动作速度由时长和移动距离决定，不以增加帧数替代。",
+    "interactionRule": "点击地面后角色100ms内转向；宝箱、环境线索和宠物反馈不得阻塞导航状态机。动画被中断、切场景或暂停时必须回到明确状态。主角使用八方向状态，不允许用单张正面图旋转冒充方向。",
+    "downloadUiRule": "下载中、暂停、校验、失败、完成四态均用进度、图标和文字表达；动画仅作辅助，减少动态模式下仍可辨认全部状态。"
+  },
+  "vfx": {
+    "maxParticlesPerEffect": 120,
+    "maxConcurrentParticles": 600,
+    "maxDrawCallsPerEffect": 3,
+    "maxTextureSize": 1024,
+    "maxDurationSeconds": 3,
+    "rule": "预算为首发硬基线；最低代表iPad与Android平板必须在环境线索150秒强提示、连续开箱和题型UI叠加场景共同压测。任何超预算资产不得进入runtime。",
+    "usageRule": "项目无战斗特效；粒子仅用于点击反馈、隐藏宝箱微光、锁扣解开、开箱闪光、奖励出现和城市解锁。",
+    "readabilityRule": "微光必须可提示但不直接暴露全部隐藏内容；开箱特效不得遮挡题目、文字、宠物奖励或可点击区域，且不使用闪烁作为唯一反馈。",
+    "degradeRule": "低配档优先减少粒子数量、透明叠层与发光采样；保留锁扣、奖励和下载状态的静态图标／文字，不改变玩法判定。"
+  },
+  "validation": {
+    "allowedImageFormats": [
+      "png",
+      "jpg",
+      "jpeg",
+      "webp"
+    ],
+    "allowedVideoFormats": [
+      "mp4",
+      "webm",
+      "mov"
+    ],
+    "maxSourceFileMB": 80,
+    "minWidth": 64,
+    "minHeight": 64,
+    "maxWidth": 4096,
+    "maxHeight": 4096,
+    "requireRuntimeAlphaDeclaration": true,
+    "allowedAudioFormats": [
+      "mp3",
+      "ogg",
+      "wav"
+    ],
+    "maxAudioFileKB": 256,
+    "runtimeMaxTextureSize": 2048,
+    "targetFps": 60,
+    "minimumResolution": "1024×768",
+    "cityPackMaxMB": 80,
+    "cityAudioBudgetMB": 5,
+    "minimumTouchTargetDp": 48,
+    "requiredPackFiles": [
+      "manifest.json",
+      "scenes/",
+      "clues/",
+      "vocab/",
+      "pets/",
+      "audio/",
+      "text/"
+    ],
+    "offlineAcceptance": "飞行模式下必须完成探索、听选、跟读降级／本地识别、图文配对、开箱、宠物屋、学习手账和存档恢复；仅城市下载入口允许不可用。",
+    "colorAccessibility": "下载、解锁、答题与错误状态通过色弱模拟检查；任何状态至少同时具备颜色之外的一种图标、文字或形状编码。",
+    "fontLanguageCoverage": "必须覆盖西语 áéíóúüñ¿¡、中文、数字和常用标点；系统字体放大后按钮与双语字幕不得裁切。",
+    "maxSceneDrawCalls": 180,
+    "maxTextureMemoryMB": 256,
+    "maxNativeMemoryMB": 700,
+    "maxWebMemoryMB": 450,
+    "coldStartMaxSeconds": 5,
+    "areaLoadMaxSeconds": 2,
+    "interactionResponseMaxMs": 100,
+    "asrFeedbackP95Ms": 1500,
+    "asrFalseAcceptMaxPercent": 2,
+    "asrTwoTrySuccessMinPercent": 85,
+    "performanceAcceptance": "最低代表iPad与Android各连续游玩30分钟，覆盖五片区、连续3次开箱、线索强提示、题型切换、宠物屋和暂停恢复；记录帧时间、内存、Draw Call、纹理内存、加载时间和温度降频，不以编辑器结果代替导出包。",
+    "contentValidation": "城市构建必须验证5片区、16宝箱、40词、5宠物、线索链、图像、音频、题目、文化文案与稳定ID完整对应；任何缺失、重复ID、未教先考或图文音错配均阻止发布，不允许运行时随机替换。"
+  },
+  "revisions": [
+    {
+      "version": 1,
+      "updatedAt": "2026-08-18T02:37:28.498Z",
+      "note": "项目创建时生成的可编辑基线；数值需由团队按目标设备确认。"
+    },
+    {
+      "version": 2,
+      "updatedAt": "2026-08-18T04:03:09.465Z",
+      "note": "依据玩法与详细玩法，将规范升级为平板优先2.5D基线，补充城市包、离线音频、触控UI、色弱可读性与轻量特效预算；性能数值待最低目标设备压测冻结。"
+    },
+    {
+      "version": 3,
+      "updatedAt": "2026-08-18T16:12:18.664Z",
+      "note": "冻结Godot 4.7.1与首发1城5片区范围；补充目标设备、帧时间、内存、加载、包体、世界尺度、图集、层级、音频、ASR与内容完整性硬门禁；城市安装后不可卸载。"
+    },
+    {
+      "version": 4,
+      "updatedAt": "2026-08-22T16:16:31.300Z",
+      "note": "新增 TA-IMG-001 AI 输出接入规范，明确生成配方归主视觉、入库与运行时约束归技术美术。"
+    },
+    {
+      "version": 5,
+      "updatedAt": "2026-08-22T16:33:05.356Z",
+      "note": "收敛 TA-IMG-001 与主视觉 Prompt 的职责：生成画布归 Prompt，技术规范只维护入库和运行时约束。"
+    }
+  ]
+}

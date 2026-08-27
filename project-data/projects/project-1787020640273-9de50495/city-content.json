@@ -1,0 +1,356 @@
+{
+  "schemaVersion": 7,
+  "projectId": "project-1787020640273-9de50495",
+  "updatedAt": "2026-08-27T11:02:45.807Z",
+  "cities": [
+    {
+      "id": "city_barcelona",
+      "name": "巴塞罗那",
+      "spanishName": "Barcelona",
+      "status": "production",
+      "difficulty": 1,
+      "overview": "从原详细玩法迁移的首发城市内容范围。实际词汇与宠物名称待内容团队在本页面逐条录入，避免根据数量约束虚构名单。",
+      "verticalSlice": "首个纵向切片选择该城市的首片区；具体宝箱、词汇和宠物条目以本页清单为准。",
+      "plannedCounts": {
+        "areas": 5,
+        "chests": 16,
+        "vocabulary": 40,
+        "pets": 5,
+        "games": 0
+      },
+      "areas": [
+        {
+          "id": "bar_guell_park",
+          "name": "桂尔公园",
+          "theme": "颜色与形状",
+          "description": "",
+          "order": 1,
+          "status": "planned"
+        },
+        {
+          "id": "bar_boqueria_market",
+          "name": "博盖利亚市场",
+          "theme": "食物与数量",
+          "description": "",
+          "order": 2,
+          "status": "planned"
+        },
+        {
+          "id": "bar_barceloleta_beach",
+          "name": "巴塞罗内塔海滨",
+          "theme": "自然与天气",
+          "description": "",
+          "order": 3,
+          "status": "planned"
+        },
+        {
+          "id": "bar_gothic_quarter",
+          "name": "哥特区街巷",
+          "theme": "地点与方向",
+          "description": "",
+          "order": 4,
+          "status": "planned"
+        },
+        {
+          "id": "bar_sagrada_familia_square",
+          "name": "圣家堂广场",
+          "theme": "问候与城市综合复习",
+          "description": "",
+          "order": 5,
+          "status": "planned"
+        }
+      ],
+      "chests": [
+        {
+          "id": "bar_guell_park_main_01",
+          "name": "桂尔公园 · 主线宝箱 01",
+          "areaId": "bar_guell_park",
+          "type": "main",
+          "culturalNote": "",
+          "status": "planned"
+        },
+        {
+          "id": "bar_guell_park_main_02",
+          "name": "桂尔公园 · 主线宝箱 02",
+          "areaId": "bar_guell_park",
+          "type": "main",
+          "culturalNote": "",
+          "status": "planned"
+        },
+        {
+          "id": "bar_guell_park_hidden_01",
+          "name": "桂尔公园 · 隐藏宝箱 01",
+          "areaId": "bar_guell_park",
+          "type": "hidden",
+          "culturalNote": "",
+          "status": "planned"
+        },
+        {
+          "id": "bar_boqueria_market_main_01",
+          "name": "博盖利亚市场 · 主线宝箱 01",
+          "areaId": "bar_boqueria_market",
+          "type": "main",
+          "culturalNote": "",
+          "status": "planned"
+        },
+        {
+          "id": "bar_boqueria_market_main_02",
+          "name": "博盖利亚市场 · 主线宝箱 02",
+          "areaId": "bar_boqueria_market",
+          "type": "main",
+          "culturalNote": "",
+          "status": "planned"
+        },
+        {
+          "id": "bar_boqueria_market_hidden_01",
+          "name": "博盖利亚市场 · 隐藏宝箱 01",
+          "areaId": "bar_boqueria_market",
+          "type": "hidden",
+          "culturalNote": "",
+          "status": "planned"
+        },
+        {
+          "id": "bar_barceloleta_beach_main_01",
+          "name": "巴塞罗内塔海滨 · 主线宝箱 01",
+          "areaId": "bar_barceloleta_beach",
+          "type": "main",
+          "culturalNote": "",
+          "status": "planned"
+        },
+        {
+          "id": "bar_barceloleta_beach_main_02",
+          "name": "巴塞罗内塔海滨 · 主线宝箱 02",
+          "areaId": "bar_barceloleta_beach",
+          "type": "main",
+          "culturalNote": "",
+          "status": "planned"
+        },
+        {
+          "id": "bar_barceloleta_beach_hidden_01",
+          "name": "巴塞罗内塔海滨 · 隐藏宝箱 01",
+          "areaId": "bar_barceloleta_beach",
+          "type": "hidden",
+          "culturalNote": "",
+          "status": "planned"
+        },
+        {
+          "id": "bar_gothic_quarter_main_01",
+          "name": "哥特区街巷 · 主线宝箱 01",
+          "areaId": "bar_gothic_quarter",
+          "type": "main",
+          "culturalNote": "",
+          "status": "planned"
+        },
+        {
+          "id": "bar_gothic_quarter_main_02",
+          "name": "哥特区街巷 · 主线宝箱 02",
+          "areaId": "bar_gothic_quarter",
+          "type": "main",
+          "culturalNote": "",
+          "status": "planned"
+        },
+        {
+          "id": "bar_gothic_quarter_hidden_01",
+          "name": "哥特区街巷 · 隐藏宝箱 01",
+          "areaId": "bar_gothic_quarter",
+          "type": "hidden",
+          "culturalNote": "",
+          "status": "planned"
+        },
+        {
+          "id": "bar_sagrada_familia_square_main_01",
+          "name": "圣家堂广场 · 主线宝箱 01",
+          "areaId": "bar_sagrada_familia_square",
+          "type": "main",
+          "culturalNote": "",
+          "status": "planned"
+        },
+        {
+          "id": "bar_sagrada_familia_square_main_02",
+          "name": "圣家堂广场 · 主线宝箱 02",
+          "areaId": "bar_sagrada_familia_square",
+          "type": "main",
+          "culturalNote": "",
+          "status": "planned"
+        },
+        {
+          "id": "bar_sagrada_familia_square_hidden_01",
+          "name": "圣家堂广场 · 隐藏宝箱 01",
+          "areaId": "bar_sagrada_familia_square",
+          "type": "hidden",
+          "culturalNote": "",
+          "status": "planned"
+        },
+        {
+          "id": "barcelona_final_chest",
+          "name": "巴塞罗那 · 城市终点大宝箱",
+          "areaId": "bar_sagrada_familia_square",
+          "type": "final",
+          "culturalNote": "",
+          "status": "planned"
+        }
+      ],
+      "vocabulary": [
+        {
+          "id": "city_barcelona_word_1787642177181_1",
+          "spanish": "hola",
+          "english": "hello",
+          "chinese": "你好",
+          "category": "",
+          "areaId": "bar_guell_park",
+          "status": "planned"
+        },
+        {
+          "id": "city_barcelona_word_1787642195186_2",
+          "spanish": "buenos días",
+          "english": "good morning",
+          "chinese": "早上好",
+          "category": "",
+          "areaId": "bar_guell_park",
+          "status": "planned"
+        },
+        {
+          "id": "city_barcelona_word_1787642195186_3",
+          "spanish": "buenas tardes",
+          "english": "good afternoon",
+          "chinese": "下午好",
+          "category": "",
+          "areaId": "bar_guell_park",
+          "status": "planned"
+        },
+        {
+          "id": "city_barcelona_word_1787642195186_4",
+          "spanish": "buenas noches",
+          "english": "good night",
+          "chinese": "晚上好 / 晚安",
+          "category": "",
+          "areaId": "bar_guell_park",
+          "status": "planned"
+        },
+        {
+          "id": "city_barcelona_word_1787642195186_5",
+          "spanish": "adiós",
+          "english": "goodbye",
+          "chinese": "再见",
+          "category": "",
+          "areaId": "bar_guell_park",
+          "status": "planned"
+        },
+        {
+          "id": "city_barcelona_word_1787642195186_6",
+          "spanish": "hasta luego",
+          "english": "see you later",
+          "chinese": "回头见",
+          "category": "",
+          "areaId": "bar_guell_park",
+          "status": "planned"
+        },
+        {
+          "id": "city_barcelona_word_1787642195186_7",
+          "spanish": "hasta mañana",
+          "english": "see you tomorrow",
+          "chinese": "明天见",
+          "category": "",
+          "areaId": "bar_guell_park",
+          "status": "planned"
+        },
+        {
+          "id": "city_barcelona_word_1787642195186_8",
+          "spanish": "¿Cómo estás?",
+          "english": "How are you?",
+          "chinese": "你好吗？",
+          "category": "",
+          "areaId": "bar_guell_park",
+          "status": "planned"
+        },
+        {
+          "id": "city_barcelona_word_1787642195186_9",
+          "spanish": "muy bien",
+          "english": "very well",
+          "chinese": "很好",
+          "category": "",
+          "areaId": "bar_guell_park",
+          "status": "planned"
+        },
+        {
+          "id": "city_barcelona_word_1787642195186_10",
+          "spanish": "así así",
+          "english": "so-so",
+          "chinese": "一般般",
+          "category": "",
+          "areaId": "bar_guell_park",
+          "status": "planned"
+        }
+      ],
+      "gameWordLinks": [],
+      "pets": [
+        {
+          "id": "city_barcelona_pet_drop_1787644011749",
+          "petContentId": "pet_drac_sant_jordi_montblanc",
+          "chestType": "main",
+          "weight": 50,
+          "enabled": true,
+          "status": "planned"
+        },
+        {
+          "id": "city_barcelona_pet_drop_1787758167548_2",
+          "petContentId": "pet_drac_sant_llorenc_del_munt",
+          "chestType": "main",
+          "weight": 50,
+          "enabled": true,
+          "status": "planned"
+        },
+        {
+          "id": "city_barcelona_pet_drop_1787758180748_1",
+          "petContentId": "pet_drac_sant_feliu_de_guixols",
+          "chestType": "hidden",
+          "weight": 50,
+          "enabled": true,
+          "status": "planned"
+        },
+        {
+          "id": "city_barcelona_pet_drop_1787758183808_2",
+          "petContentId": "pet_drac_sant_llorenc_del_munt",
+          "chestType": "hidden",
+          "weight": 25,
+          "enabled": true,
+          "status": "planned"
+        },
+        {
+          "id": "city_barcelona_pet_drop_1787758187478_3",
+          "petContentId": "pet_drac_sant_jordi_montblanc",
+          "chestType": "hidden",
+          "weight": 25,
+          "enabled": true,
+          "status": "planned"
+        },
+        {
+          "id": "city_barcelona_pet_drop_1787828561230_1",
+          "petContentId": "pet_drac_sant_jordi_montblanc",
+          "chestType": "final",
+          "weight": 100,
+          "enabled": true,
+          "status": "planned"
+        }
+      ],
+      "games": [],
+      "backgroundMusic": [
+        {
+          "id": "city_barcelona_bgm_1787644280161",
+          "name": "巴塞罗那背景音乐",
+          "resourceRef": "assets/source/city-background-music/city_barcelona/city_barcelona_bgm_1787644280161/source.wav",
+          "audioUrl": "/project-assets/project-1787020640273-9de50495/assets/source/city-background-music/city_barcelona/city_barcelona_bgm_1787644280161/source.wav",
+          "originalName": "暂定v4_72s_loop2x.wav",
+          "scope": "city",
+          "areaId": "",
+          "trigger": "default",
+          "loop": true,
+          "volume": 70,
+          "fadeSeconds": 1,
+          "status": "ready"
+        }
+      ],
+      "updatedAt": "2026-08-27T11:02:45.807Z"
+    }
+  ]
+}

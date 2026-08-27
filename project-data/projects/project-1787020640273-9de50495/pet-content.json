@@ -1,0 +1,156 @@
+{
+  "schemaVersion": 2,
+  "projectId": "project-1787020640273-9de50495",
+  "updatedAt": "2026-08-27T11:27:15.438Z",
+  "pets": [
+    {
+      "id": "pet_drac_sant_jordi_montblanc",
+      "spanishName": "Drac de Sant Jordi / Drac de Montblanc",
+      "chineseName": "圣乔治之龙 / 蒙特布兰克龙",
+      "rarity": "rare",
+      "designSource": "加泰罗尼亚最著名的龙。传说栖息在塔拉戈纳省蒙特布兰克（Montblanc）镇附近，肆虐乡里，毒化水源，吞食牲畜。镇民为平息其怒，每日抽签献上一人为食。某日抽签轮到国王的女儿，公主身着白衣走向龙穴。途中遇到骑士圣乔治（Sant Jordi），骑士挺身而出，以长矛刺入龙身。龙血洒落之地长出了一株红玫瑰——这便是加泰罗尼亚“圣乔治节（4月23日）互赠玫瑰与书籍”传统的起源。圣乔治将龙以绳索套颈，交给公主牵回镇上，镇民愤而将其击杀。此传说使圣乔治成为加泰罗尼亚的主保圣人。",
+      "appearanceDesign": "一条巨大的欧洲龙，四足行走，背生蝙蝠状双翼，覆盖深绿色与暗红色相间的鳞片。头部似狮又似蛇，头顶生有弯曲的黑色犄角，双目如燃烧的炭火，口中喷出炽热的火焰。颈部有鬃毛状的棘刺，四肢粗壮有利爪如钢钩，长尾末端有骨刺。整体姿态凶猛威严，盘踞在岩石山洞前，周围是干涸的土地和枯萎的树木，背景为中世纪加泰罗尼亚山丘。中世纪手抄本插画风格，色彩浓烈，线条粗犷。",
+      "idleAnimationParameters": {
+        "model": "seedance_2.0_fast（默认）",
+        "duration": "5 秒（循环待机）",
+        "aspectRatio": "1:1（适合宠物展示，角色居中）",
+        "referenceImage": "",
+        "actionContent": "温和呼吸起伏 → 缓慢眨眼 → 轻微摆尾或局部装饰摆动 → 回到起始姿态，循环流畅无跳变。",
+        "style": "继承项目主视觉的材质、左上主光、柔和环境光与干净接地阴影。",
+        "background": "简洁暖米色中性背景，无场景元素",
+        "dialogueAudio": "无，纯动画 + 环境音",
+        "prohibitions": "文字/水印、照片写实、攻击性动作、角色身份漂移、镜头旋转"
+      },
+      "imageAssetIds": [
+        "asset-1787485832150-0d19df2a",
+        "asset-1787486605919-cf29e8f1",
+        "asset-1787486609640-85caa8fd",
+        "asset-1787486613369-37703616",
+        "asset-1787486617087-6981b061",
+        "asset-1787486620828-28d34139"
+      ],
+      "primaryImageAssetId": "asset-1787485832150-0d19df2a",
+      "assetId": "asset-1787485832150-0d19df2a",
+      "status": "ready",
+      "updatedAt": "2026-08-27T11:27:15.438Z"
+    },
+    {
+      "id": "pet_drac_sant_llorenc_del_munt",
+      "spanishName": "Drac de Sant Llorenç del Munt",
+      "chineseName": "圣洛伦索山之龙",
+      "rarity": "rare",
+      "designSource": "巴塞罗那省圣洛伦索山（Sant Llorenç del Munt i l'Obac）地区最古老的传说之一。传说这条龙由撒拉逊人（摩尔人）带来，饲养在圣阿格妮丝洞穴（Cova de Santa Agnès）中，后被释放到整个地区肆虐。龙栖息在被称为“龙穴”（Cova del Drac）的山洞中，至今该地点仍可在山中找到。居民向伯爵吉弗雷（Guifré，即“毛手吉弗雷”，巴塞罗那伯爵家族的传奇创始人）求助。伯爵率领骑士经过漫长追逐，在奥洛尔达山口（Coll d'Olorda）与龙激战并将其斩杀，就地埋葬。随着时间流逝，龙的遗体分解，将墓穴中的岩石染成黑色——该地区至今有黑色岩石的地质特征，被认为是龙血所染。此传说解释了加泰罗尼亚地区多处“龙穴”地名的由来。",
+      "appearanceDesign": "一条巨型有翼龙，体型比普通龙更为庞大，全身覆盖炭黑色鳞片，鳞片边缘泛着暗红色的光泽，仿佛被血液浸染。四足粗壮如石柱，翼展极宽，翼膜为暗灰色。头部有尖锐的角和突出的眉骨，双目发出幽绿的光芒。长尾如蛇，末端有锋利的尾刺。盘踞在石灰岩山洞入口，周围是黑色的岩石和枯树，背景为加泰罗尼亚山前地带的荒凉山地。风格为浪漫主义风景画中的怪物插画，明暗对比强烈，氛围阴森。",
+      "idleAnimationParameters": {
+        "model": "seedance_2.0_fast（默认）",
+        "duration": "5 秒（循环待机）",
+        "aspectRatio": "1:1（适合宠物展示，角色居中）",
+        "referenceImage": "",
+        "actionContent": "温和呼吸起伏 → 缓慢眨眼 → 轻微摆尾或局部装饰摆动 → 回到起始姿态，循环流畅无跳变。",
+        "style": "继承项目主视觉的材质、左上主光、柔和环境光与干净接地阴影。",
+        "background": "简洁暖米色中性背景，无场景元素",
+        "dialogueAudio": "无，纯动画 + 环境音",
+        "prohibitions": "文字/水印、照片写实、攻击性动作、角色身份漂移、镜头旋转"
+      },
+      "imageAssetIds": [
+        "asset-1787485863636-c8bfdc7f",
+        "asset-1787486640233-f998a3ee",
+        "asset-1787486643937-c6f7f74a",
+        "asset-1787486647661-aa31a13e",
+        "asset-1787486651386-1536a84b",
+        "asset-1787486655120-a040d3b5"
+      ],
+      "primaryImageAssetId": "asset-1787485863636-c8bfdc7f",
+      "assetId": "asset-1787485863636-c8bfdc7f",
+      "status": "planned",
+      "updatedAt": "2026-08-27T11:27:15.438Z"
+    },
+    {
+      "id": "pet_drac_sant_feliu_de_guixols",
+      "spanishName": "Drac de Sant Feliu de Guíxols",
+      "chineseName": "圣费柳德吉克索尔斯之龙",
+      "rarity": "rare",
+      "designSource": "赫罗纳省滨海小镇圣费柳德吉克索尔斯（Sant Feliu de Guíxols）的传说。这条龙栖息在城堡附近的山洞中，威胁着镇上居民。传说龙要求献上公主为食，一位牧羊女（或侍女）得知后，主动设计代替公主前往——她欺骗龙，将龙引向错误的方向，然后跑去通知保护该地区的骑士。骑士在城堡门前与龙展开激战，经过一场恶战将龙杀死。此传说属于“圣乔治斩龙”母题的地方变体，但加入了“牧羊女智斗龙”的独特情节。",
+      "appearanceDesign": "一条中等体型的有翼龙，全身覆盖海蓝色与青绿色的鳞片，因长期栖息在海边洞穴而带有海洋色调。四足有力，背部有一对收拢的蝙蝠翼，翼膜呈半透明的灰蓝色。头部有向后弯曲的角，嘴中露出尖锐的獠牙，双目呈金黄色。颈部有鳍状的褶边，尾巴细长如鞭。盘踞在海边岩石城堡的城墙下，背景是地中海的蓝色海面和加泰罗尼亚海岸的白色岩石。风格为中世纪城堡编年史插画，色彩明亮，带有滨海地区的阳光感。",
+      "idleAnimationParameters": {
+        "model": "seedance_2.0_fast（默认）",
+        "duration": "5 秒（循环待机）",
+        "aspectRatio": "1:1（适合宠物展示，角色居中）",
+        "referenceImage": "",
+        "actionContent": "温和呼吸起伏 → 缓慢眨眼 → 轻微摆尾或局部装饰摆动 → 回到起始姿态，循环流畅无跳变。",
+        "style": "继承项目主视觉的材质、左上主光、柔和环境光与干净接地阴影。",
+        "background": "简洁暖米色中性背景，无场景元素",
+        "dialogueAudio": "无，纯动画 + 环境音",
+        "prohibitions": "文字/水印、照片写实、攻击性动作、角色身份漂移、镜头旋转"
+      },
+      "imageAssetIds": [
+        "asset-1787485883163-fc8fed37",
+        "asset-1787486673106-f86de5f4",
+        "asset-1787486676817-6de91264",
+        "asset-1787486680534-ad8fbc0a",
+        "asset-1787486684260-07482965",
+        "asset-1787486687992-4b6fc064"
+      ],
+      "primaryImageAssetId": "asset-1787485883163-fc8fed37",
+      "assetId": "asset-1787485883163-fc8fed37",
+      "status": "planned",
+      "updatedAt": "2026-08-27T11:27:15.438Z"
+    }
+  ],
+  "actionStandards": [
+    {
+      "id": "idle",
+      "name": "待机",
+      "description": "宠物展示和非交互状态的基础循环动作。",
+      "actionContent": "温和呼吸起伏 → 缓慢眨眼 → 轻微摆尾或局部装饰摆动 → 回到起始姿态，循环流畅无跳变。",
+      "loop": true,
+      "samplePetId": "pet_drac_sant_jordi_montblanc",
+      "sampleSequenceId": "20260824T152954-039ac307"
+    },
+    {
+      "id": "reveal",
+      "name": "获得出场",
+      "description": "玩家获得宠物时的展示动作，用于奖励确认。",
+      "actionContent": "光效聚拢 → 宠物出现并落稳 → 表情确认 → 保持展示姿态。",
+      "loop": false,
+      "samplePetId": "pet_drac_sant_jordi_montblanc",
+      "sampleSequenceId": "20260825142809-reveal2"
+    },
+    {
+      "id": "hatch",
+      "name": "孵化",
+      "description": "宠物由蛋或容器中孵化出现的动作。",
+      "actionContent": "容器轻微震动 → 裂纹或光效出现 → 宠物破壳／探出 → 落稳。",
+      "loop": false,
+      "samplePetId": "pet_drac_sant_jordi_montblanc",
+      "sampleSequenceId": "20260825142809-hatch1"
+    },
+    {
+      "id": "interaction-jump",
+      "name": "互动蹦跳",
+      "description": "点击宠物或获得互动反馈时的轻量动作。",
+      "actionContent": "预备压缩 → 轻微蹦跳 → 自然落地 → 回到待机。",
+      "loop": false,
+      "samplePetId": "pet_drac_sant_jordi_montblanc",
+      "sampleSequenceId": "20260825142809-jump3"
+    },
+    {
+      "id": "rare-reveal",
+      "name": "稀有度出场",
+      "description": "稀有宠物的强化获得展示动作。",
+      "actionContent": "稀有度光效聚焦 → 宠物出场 → 金色粒子收束 → 保持展示姿态。",
+      "loop": false,
+      "samplePetId": "pet_drac_sant_jordi_montblanc",
+      "sampleSequenceId": "20260825142809-rare5"
+    },
+    {
+      "id": "merge",
+      "name": "三合一合成",
+      "description": "三只同类宠物合成升级时的结果展示动作。",
+      "actionContent": "三道能量汇聚 → 合成闪光 → 结果宠物出现 → 落稳并回到待机。",
+      "loop": false,
+      "samplePetId": "pet_drac_sant_jordi_montblanc",
+      "sampleSequenceId": "20260825142809-merge4"
+    }
+  ]
+}

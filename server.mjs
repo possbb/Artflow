@@ -728,7 +728,7 @@ function defaultGameManagedArtAssets(gameName) {
 }
 
 function defaultGameContent(projectId) {
-  return { schemaVersion: 4, projectId, updatedAt: '', games: [], artAssets: defaultGameArtAssets() }
+  return { schemaVersion: 5, projectId, updatedAt: '', games: [], artAssets: defaultGameArtAssets() }
 }
 
 function cityContentFile(projectId) {
@@ -758,6 +758,30 @@ function normalizeActionSoundEffect(value) {
     resourceRef: cleanCityText(value?.resourceRef, 260),
     audioUrl: cleanCityText(value?.audioUrl, 320),
     originalName: cleanCityText(value?.originalName, 180),
+    updatedAt: cleanCityText(value?.updatedAt, 80),
+  }
+}
+
+function defaultGameMediaRequirements(name, variants) {
+  const text = `${name || ''} ${variants || ''}`
+  return {
+    animation: /动效|动画|序列帧|播放中|录音中|识别中|闪烁|脉冲|抖动/.test(text),
+    sound: /语音|发音|播放|麦克风|正确反馈|错误反馈|识别成功|识别失败|匹配成功|匹配失败|全部完成|锁扣解开|解锁/.test(text),
+  }
+}
+
+function normalizeGameMediaRequirements(value, name, variants) {
+  if (!value || typeof value !== 'object') return defaultGameMediaRequirements(name, variants)
+  return { animation: Boolean(value.animation), sound: Boolean(value.sound) }
+}
+
+function normalizeGameSoundEffect(value) {
+  return {
+    resourceRef: cleanCityText(value?.resourceRef, 260),
+    audioUrl: cleanCityText(value?.audioUrl, 320),
+    originalName: cleanCityText(value?.originalName, 180),
+    trigger: cleanCityText(value?.trigger, 120),
+    volume: Math.min(100, Math.max(0, Math.round(parseNumber(value?.volume, 100)))),
     updatedAt: cleanCityText(value?.updatedAt, 80),
   }
 }
@@ -854,15 +878,20 @@ function normalizeGameContent(projectId, value) {
       ].filter((assetId) => /^asset-\d{13}-[a-f0-9]{8}$/i.test(assetId)))]
       const preferredPrimaryImageId = cleanCityText(asset?.primaryImageAssetId, 80)
       const primaryImageAssetId = imageAssetIds.includes(preferredPrimaryImageId) ? preferredPrimaryImageId : imageAssetIds[0] || ''
+      const assetName = cleanCityText(asset?.name, 100)
+      const variants = cleanCityText(asset?.variants, 240)
       return {
         id,
         order: Math.min(999, Math.max(1, Math.round(parseNumber(asset?.order, assetIndex + 1)))),
-        name: cleanCityText(asset?.name, 100),
+        name: assetName,
         description: cleanCityText(asset?.description, 800),
-        variants: cleanCityText(asset?.variants, 240),
+        variants,
         imageAssetIds,
         primaryImageAssetId,
         assetId: primaryImageAssetId || cleanCityText(asset?.assetId, 120),
+        dynamicImageAssetIds: cleanCityStringList(asset?.dynamicImageAssetIds, 12).filter((assetId) => /^asset-\d{13}-[a-f0-9]{8}$/i.test(assetId)),
+        mediaRequirements: normalizeGameMediaRequirements(asset?.mediaRequirements, assetName, variants),
+        soundEffect: normalizeGameSoundEffect(asset?.soundEffect),
         status: cityItemStatuses.has(asset?.status) ? asset.status : 'planned',
       }
     })
@@ -890,16 +919,21 @@ function normalizeGameContent(projectId, value) {
     ].filter((assetId) => /^asset-\d{13}-[a-f0-9]{8}$/i.test(assetId)))]
     const preferredPrimaryImageId = cleanCityText(asset?.primaryImageAssetId, 120)
     const primaryImageAssetId = imageAssetIds.includes(preferredPrimaryImageId) ? preferredPrimaryImageId : imageAssetIds[0] || ''
+    const assetName = cleanCityText(asset?.name, 100)
+    const variants = cleanCityText(asset?.variants, 240)
     return {
       id,
       group: asset?.group === 'common' || defaultCommonGameArtAssetIds.has(id) ? 'common' : 'clue-teaching',
-      name: cleanCityText(asset?.name, 100),
+      name: assetName,
       description: cleanCityText(asset?.description, 800),
       quantity: cleanCityText(asset?.quantity, 160),
-      variants: cleanCityText(asset?.variants, 240),
+      variants,
       imageAssetIds,
       primaryImageAssetId,
       assetId: primaryImageAssetId,
+      dynamicImageAssetIds: cleanCityStringList(asset?.dynamicImageAssetIds, 12).filter((assetId) => /^asset-\d{13}-[a-f0-9]{8}$/i.test(assetId)),
+      mediaRequirements: normalizeGameMediaRequirements(asset?.mediaRequirements, assetName, variants),
+      soundEffect: normalizeGameSoundEffect(asset?.soundEffect),
       status: cityItemStatuses.has(asset?.status) ? asset.status : 'planned',
       updatedAt: new Date().toISOString(),
     }
@@ -907,7 +941,7 @@ function normalizeGameContent(projectId, value) {
   if (normalizedGames.some((game) => !game.name || !game.category)) throw new Error('每条游戏内容都必须填写名称和类型。')
   if (normalizedGames.some((game) => game.artAssets.some((asset) => !asset.name || !asset.description))) throw new Error('每项游戏专属美术内容都必须填写名称和说明。')
   if (normalizedArtAssets.some((asset) => !asset.name || !asset.description)) throw new Error('每条游戏美术素材都必须填写名称和说明。')
-  return { schemaVersion: 4, projectId, updatedAt: new Date().toISOString(), games: normalizedGames, artAssets: normalizedArtAssets }
+  return { schemaVersion: 5, projectId, updatedAt: new Date().toISOString(), games: normalizedGames, artAssets: normalizedArtAssets }
 }
 
 function normalizeCityContent(projectId, value) {
@@ -1756,6 +1790,60 @@ app.put('/api/projects/:projectId/game-content', async (request, response) => {
     response.json({ ok: true, content })
   } catch (error) {
     response.status(400).json({ error: error instanceof Error ? error.message : '游戏内容保存失败。' })
+  }
+})
+
+function gameArtSoundEffectFolder(assetRoot, scope, assetId, gameId = '') {
+  return scope === 'managed'
+    ? join(assetRoot, 'assets', 'source', 'game-art-sound-effects', 'managed', gameId, assetId)
+    : join(assetRoot, 'assets', 'source', 'game-art-sound-effects', 'global', assetId)
+}
+
+app.post('/api/projects/:projectId/game-art-sound-effects', audioUpload.single('audio'), async (request, response) => {
+  const file = request.file
+  if (!file) return response.status(400).json({ error: '请选择 MP3、WAV、OGG、M4A、AAC 或 FLAC 音频文件。' })
+  let targetFolder = ''
+  try {
+    const projectId = assertProjectId(request.params.projectId)
+    const scope = request.body.scope === 'managed' ? 'managed' : request.body.scope === 'global' ? 'global' : ''
+    const assetId = cleanCityId(request.body.assetId, '')
+    const gameId = cleanCityId(request.body.gameId, '')
+    if (!scope || !assetId || (scope === 'managed' && !gameId)) throw new Error('音效关联目标无效。')
+    await readProject(projectId)
+    const extension = extname(file.originalname).toLowerCase()
+    if (!supportedAudioExtensions.has(extension)) throw new Error('音频格式不受支持。')
+    const assetRoot = await getProjectAssetFolder(projectId)
+    targetFolder = gameArtSoundEffectFolder(assetRoot, scope, assetId, gameId)
+    await rm(targetFolder, { recursive: true, force: true })
+    await mkdir(targetFolder, { recursive: true })
+    const fileName = `source${extension}`
+    await rename(file.path, join(targetFolder, fileName))
+    const updatedAt = new Date().toISOString()
+    const resourceRef = scope === 'managed'
+      ? `assets/source/game-art-sound-effects/managed/${gameId}/${assetId}/${fileName}`
+      : `assets/source/game-art-sound-effects/global/${assetId}/${fileName}`
+    const soundEffect = { resourceRef, audioUrl: `/project-assets/${projectId}/${resourceRef}`, originalName: normalizeUploadedFileName(file.originalname), trigger: '', volume: 100, updatedAt }
+    await writeFile(join(targetFolder, 'audio.json'), `${JSON.stringify({ schemaVersion: 1, projectId, scope, gameId, assetId, originalName: soundEffect.originalName, fileName, size: file.size, createdAt: updatedAt }, null, 2)}\n`, 'utf8')
+    response.status(201).json({ soundEffect })
+  } catch (error) {
+    if (file.path && existsSync(file.path)) await rm(file.path, { force: true })
+    if (targetFolder) await rm(targetFolder, { recursive: true, force: true })
+    response.status(400).json({ error: error instanceof Error ? error.message : '游戏音效上传失败。' })
+  }
+})
+
+app.delete('/api/projects/:projectId/game-art-sound-effects', async (request, response) => {
+  try {
+    const projectId = assertProjectId(request.params.projectId)
+    const scope = request.query.scope === 'managed' ? 'managed' : request.query.scope === 'global' ? 'global' : ''
+    const assetId = cleanCityId(request.query.assetId, '')
+    const gameId = cleanCityId(request.query.gameId, '')
+    if (!scope || !assetId || (scope === 'managed' && !gameId)) throw new Error('音效关联目标无效。')
+    await readProject(projectId)
+    await rm(gameArtSoundEffectFolder(await getProjectAssetFolder(projectId), scope, assetId, gameId), { recursive: true, force: true })
+    response.json({ ok: true })
+  } catch (error) {
+    response.status(400).json({ error: error instanceof Error ? error.message : '游戏音效删除失败。' })
   }
 })
 

@@ -61,6 +61,7 @@ import { PetContentPage } from './PetContentPage'
 import { GameContentPage } from './GameContentPage'
 import { MainVisualDeliverablesPanel } from './MainVisualDeliverablesPanel'
 import { CharacterSettingSheetsPanel } from './CharacterSettingSheetsPanel'
+import { spanishAdventureStaticData } from './data/spanishAdventure'
 
 const isStaticDemo = import.meta.env.VITE_STATIC_DEMO === 'true'
 
@@ -139,8 +140,8 @@ type Project = {
 
 const staticDemoProject: Project = {
   id: 'browser-demo',
-  name: '在线演示项目',
-  description: 'GitHub Pages 在线演示；模块要求保存在当前浏览器。',
+  name: '西语冒险',
+  description: '巴塞罗那首发城市的西语教育冒险项目在线演示。',
   createdAt: '',
   updatedAt: '',
   isDefault: true,
@@ -269,6 +270,7 @@ function WorkspaceApp() {
 
   useEffect(() => {
     if (isStaticDemo) {
+      seedSpanishAdventureStaticData()
       setProjects([staticDemoProject])
       setActiveProject(staticDemoProject.id)
       setActiveProjectId(staticDemoProject.id)
@@ -395,7 +397,7 @@ function WorkspaceApp() {
             <Route path="/city-content-management" element={<CityContentPage projectId={activeProjectId} staticDemo={isStaticDemo} />} />
             <Route path="/pet-content-management" element={<PetContentPage projectId={activeProjectId} staticDemo={isStaticDemo} mainVisualModule={modules.find((module) => module.id === 'main-visual-design')} />} />
             <Route path="/game-content-management" element={<GameContentPage projectId={activeProjectId} staticDemo={isStaticDemo} mainVisualModule={modules.find((module) => module.id === 'main-visual-design')} detailedGameplayModule={detailedGameplayModule} />} />
-            <Route path="/technical-standards" element={<TechnicalStandardsPage projectId={activeProjectId} />} />
+            <Route path="/technical-standards" element={<TechnicalStandardsPage projectId={activeProjectId} staticDemo={isStaticDemo} />} />
             <Route
               path="/modules/:moduleId/requirements"
               element={
@@ -433,6 +435,27 @@ function WorkspaceApp() {
       </div>
     </div>
   )
+}
+
+function seedSpanishAdventureStaticData() {
+  const projectId = staticDemoProject.id
+  const seed = (key: string, value: unknown) => {
+    if (window.localStorage.getItem(key) !== null) return
+    const cloned = structuredClone(value)
+    if (cloned && typeof cloned === 'object' && !Array.isArray(cloned) && 'projectId' in cloned) {
+      ;(cloned as { projectId: string }).projectId = projectId
+    }
+    window.localStorage.setItem(key, JSON.stringify(cloned))
+  }
+
+  seed('artflow:module-requirements:v1', spanishAdventureStaticData.modules)
+  seed(`artflow:project-plan:${projectId}:v1`, spanishAdventureStaticData.projectPlan)
+  seed(`artflow:city-content:${projectId}:v1`, spanishAdventureStaticData.cityContent)
+  seed(`artflow:pet-content:${projectId}:v1`, spanishAdventureStaticData.petContent)
+  seed(`artflow:game-content:${projectId}:v1`, spanishAdventureStaticData.gameContent)
+  seed(`artflow:character-setting-sheets:${projectId}:v1`, spanishAdventureStaticData.characterSettingSheets)
+  seed(`artflow:main-visual-deliverables:${projectId}:v1`, spanishAdventureStaticData.mainVisualDeliverables)
+  seed(`artflow:technical-standards:${projectId}:v1`, spanishAdventureStaticData.technicalStandards)
 }
 
 function Sidebar({
@@ -1020,7 +1043,7 @@ const standardFieldLabels: Record<string, string> = {
   allowedImageFormats: '允许图片格式', allowedVideoFormats: '允许视频格式', allowedAudioFormats: '允许音频格式', maxSourceFileMB: '最大源文件 MB', maxAudioFileKB: '单词音频最大 KB', minWidth: '最小宽度', minHeight: '最小高度', maxWidth: '最大宽度', maxHeight: '最大高度', runtimeMaxTextureSize: '运行时最大纹理', cityPackMaxMB: '单城市包上限 MB', cityAudioBudgetMB: '单城市音频预算 MB', minimumTouchTargetDp: '最小触控热区 dp', requiredPackFiles: '城市包必需内容', offlineAcceptance: '离线验收规则', colorAccessibility: '色弱验收规则', fontLanguageCoverage: '字体语言覆盖', requireRuntimeAlphaDeclaration: '要求声明 Alpha', maxSceneDrawCalls: '单场景最大 Draw Call', maxTextureMemoryMB: '纹理显存上限 MB', maxNativeMemoryMB: '原生峰值内存 MB', maxWebMemoryMB: 'Web峰值内存 MB', coldStartMaxSeconds: '冷启动上限秒', areaLoadMaxSeconds: '片区加载上限秒', interactionResponseMaxMs: '交互反馈上限 ms', asrFeedbackP95Ms: 'ASR反馈P95 ms', asrFalseAcceptMaxPercent: 'ASR误通过上限 %', asrTwoTrySuccessMinPercent: 'ASR两次通过率下限 %', performanceAcceptance: '性能验收场景', contentValidation: '城市内容完整性门禁',
 }
 
-function TechnicalStandardsPage({ projectId }: { projectId: string }) {
+function TechnicalStandardsPage({ projectId, staticDemo }: { projectId: string; staticDemo: boolean }) {
   const [standards, setStandards] = useState<TechnicalStandards | null>(null)
   const [changeNote, setChangeNote] = useState('')
   const [loading, setLoading] = useState(true)
@@ -1030,12 +1053,18 @@ function TechnicalStandardsPage({ projectId }: { projectId: string }) {
   useEffect(() => {
     if (!projectId) return
     setLoading(true)
+    if (staticDemo) {
+      const stored = window.localStorage.getItem(`artflow:technical-standards:${projectId}:v1`)
+      setStandards(stored ? JSON.parse(stored) : spanishAdventureStaticData.technicalStandards as TechnicalStandards)
+      setLoading(false)
+      return
+    }
     void fetch(`/api/technical-standards?projectId=${projectId}`).then(async (response) => {
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || '技术规范读取失败。')
       setStandards(result)
     }).catch((loadError) => setMessage({ type: 'error', text: loadError instanceof Error ? loadError.message : '技术规范读取失败。' })).finally(() => setLoading(false))
-  }, [projectId])
+  }, [projectId, staticDemo])
 
   const updateField = (section: keyof TechnicalStandards, key: string, value: StandardValue) => setStandards((current) => current ? { ...current, [section]: { ...(current[section] as StandardSection), [key]: value } } : current)
   const saveStandards = async () => {
@@ -1043,6 +1072,14 @@ function TechnicalStandardsPage({ projectId }: { projectId: string }) {
     setSaving(true)
     setMessage(null)
     try {
+      if (staticDemo) {
+        const value = { ...standards, updatedAt: new Date().toISOString(), version: standards.version + 1 }
+        window.localStorage.setItem(`artflow:technical-standards:${projectId}:v1`, JSON.stringify(value))
+        setStandards(value)
+        setChangeNote('')
+        setMessage({ type: 'success', text: `规范已保存为 v${value.version}。` })
+        return
+      }
       const response = await fetch('/api/technical-standards', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectId, standards: { ...standards, changeNote } }) })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || '技术规范保存失败。')
