@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { ArrowRight, Check, ClipboardList, Film, Image as ImageIcon, ImagePlus, LoaderCircle, MapPinned, Palette, Pause, PawPrint, PencilLine, Play, Plus, RotateCcw, Save, Star, Trash2, Upload, Volume2, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { ArtModule } from './data/modules'
+import { spanishAdventureStaticImageAssets } from './data/spanishAdventureAssets'
 
 type PetRarity = 'common' | 'rare'
 type PetStatus = 'planned' | 'in_progress' | 'ready'
@@ -61,7 +62,7 @@ export function PetContentPage({ projectId, staticDemo, mainVisualModule }: { pr
           const parsed = stored ? JSON.parse(stored) as PetContent : emptyContent(projectId)
           const actionStandards = Number(parsed.schemaVersion || 0) < 2 ? defaultPetActionStandards() : normalizeActionStandards(parsed.actionStandards || defaultPetActionStandards())
           setContent({ ...parsed, schemaVersion: 2, actionStandards, pets: parsed.pets.map((pet) => ({ ...pet, designSource: pet.designSource || pet.description || '', appearanceDesign: pet.appearanceDesign || '', idleAnimationParameters: { ...defaultIdleAnimationParameters(), ...pet.idleAnimationParameters }, imageAssetIds: Array.isArray(pet.imageAssetIds) ? pet.imageAssetIds : [], primaryImageAssetId: pet.primaryImageAssetId || pet.assetId || '', assetId: pet.primaryImageAssetId || pet.assetId || '' })) })
-          setAssets([]); setSampleSequences([])
+          setAssets(spanishAdventureStaticImageAssets.filter((asset) => asset.moduleId === 'pet-content')); setSampleSequences([])
         } else {
           const [petResponse, assetResponse, sequenceResponse] = await Promise.all([
             fetch(`/api/projects/${projectId}/pet-content`),

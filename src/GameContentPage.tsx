@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { ArrowRight, Check, CircleAlert, ClipboardList, Film, Gamepad2, Image as ImageIcon, ImagePlus, Layers3, LoaderCircle, MapPinned, Palette, Pause, PencilLine, Play, Plus, RotateCcw, Save, Star, Trash2, Upload, Volume2, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { ArtModule } from './data/modules'
+import { spanishAdventureStaticImageAssets } from './data/spanishAdventureAssets'
 
 type GameStatus = 'planned' | 'in_progress' | 'ready'
 type ArtAssetGroup = 'common' | 'clue-teaching'
@@ -159,7 +160,7 @@ export function GameContentPage({ projectId, staticDemo, mainVisualModule, detai
       try {
         if (staticDemo) {
           const stored = window.localStorage.getItem(`artflow:game-content:${projectId}:v1`)
-          setContent(normalizeContent(projectId, stored ? JSON.parse(stored) : null)); setImageAssets([])
+          setContent(normalizeContent(projectId, stored ? JSON.parse(stored) : null)); setImageAssets(spanishAdventureStaticImageAssets.filter((asset) => asset.moduleId === 'game-content'))
         } else {
           const [response, assetResponse] = await Promise.all([fetch(`/api/projects/${projectId}/game-content`), fetch(`/api/image-assets?${new URLSearchParams({ projectId, moduleId: 'game-content' })}`)])
           const [result, assetResult] = await Promise.all([response.json(), assetResponse.json()])
@@ -434,10 +435,11 @@ function GameArtAssetDetailForm({ projectId, staticDemo, imageAssets, draft, sav
   const [uploadingSequence, setUploadingSequence] = useState(false)
   const [error, setError] = useState('')
   const linkedAssets = imageAssets.filter((image) => asset.imageAssetIds.includes(image.id))
+  const needsAnimation = asset.mediaRequirements?.animation === true
   const set = <K extends keyof GameArtAsset>(key: K, value: GameArtAsset[K]) => onChange({ ...asset, [key]: value })
 
   useEffect(() => {
-    if (staticDemo || draft.isNew || !asset.id) { setSequences([]); setLoadingSequences(false); return }
+    if (!needsAnimation || staticDemo || draft.isNew || !asset.id) { setSequences([]); setLoadingSequences(false); return }
     setLoadingSequences(true); setError('')
     void (async () => {
       try {
@@ -448,13 +450,14 @@ function GameArtAssetDetailForm({ projectId, staticDemo, imageAssets, draft, sav
         setSequences(result)
       } catch (loadError) { setError(loadError instanceof Error ? loadError.message : '游戏动态素材读取失败。') } finally { setLoadingSequences(false) }
     })()
-  }, [asset.id, draft.isNew, projectId, staticDemo])
+  }, [asset.id, draft.isNew, needsAnimation, projectId, staticDemo])
 
   const attachImages = async () => {
-    if (files.length === 0) return setError('请先选择至少一张图片或动图。')
+    const allowedFiles = needsAnimation ? files : files.filter((file) => file.type !== 'image/gif')
+    if (allowedFiles.length === 0) return setError(needsAnimation ? '请先选择至少一张图片或动图。' : '静态图片素材不接收 GIF；如确有动效需求，请先开启动态素材。')
     setUploadingImages(true); setError('')
     try {
-      const created = await onUpload(asset, files)
+      const created = await onUpload(asset, allowedFiles)
       const imageAssetIds = [...new Set([...asset.imageAssetIds, ...created.map((image) => image.id)])]
       const primaryImageAssetId = asset.primaryImageAssetId || created[0]?.id || ''
       onChange({ ...asset, imageAssetIds, primaryImageAssetId, assetId: primaryImageAssetId })
@@ -468,6 +471,7 @@ function GameArtAssetDetailForm({ projectId, staticDemo, imageAssets, draft, sav
     onChange({ ...asset, imageAssetIds, primaryImageAssetId, assetId: primaryImageAssetId })
   }
   const createSequence = async (mode: 'video' | 'frames') => {
+    if (!needsAnimation) return setError('请先开启动态素材管理，再上传序列帧。')
     if (draft.isNew || !asset.id) return setError('请先保存素材基本信息，再上传动态素材。')
     if (mode === 'video' && (!video || !videoName.trim())) return setError('请选择视频并填写动画名称。')
     if (mode === 'frames' && (directFrames.length === 0 || !directName.trim())) return setError('请选择 PNG 序列帧并填写动画名称。')

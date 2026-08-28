@@ -62,6 +62,7 @@ import { GameContentPage } from './GameContentPage'
 import { MainVisualDeliverablesPanel } from './MainVisualDeliverablesPanel'
 import { CharacterSettingSheetsPanel } from './CharacterSettingSheetsPanel'
 import { spanishAdventureStaticData } from './data/spanishAdventure'
+import { spanishAdventureStaticImageAssets } from './data/spanishAdventureAssets'
 
 const isStaticDemo = import.meta.env.VITE_STATIC_DEMO === 'true'
 
@@ -390,7 +391,7 @@ function WorkspaceApp() {
         <main className="page-stage">
           <Routes>
             <Route path="/" element={<Dashboard modules={modules} onResetAll={resetAll} />} />
-            <Route path="/assets" element={<ImageAssetLibrary projectId={activeProjectId} modules={modules} />} />
+            <Route path="/assets" element={<ImageAssetLibrary projectId={activeProjectId} modules={modules} staticDemo={isStaticDemo} />} />
             <Route path="/asset-registry" element={<AssetRegistry projectId={activeProjectId} modules={modules} />} />
             <Route path="/asset-registry/:assetId" element={<AssetDetail projectId={activeProjectId} modules={modules} />} />
             <Route path="/project-plan" element={<ProjectPlanPage projectId={activeProjectId} modules={modules} staticDemo={isStaticDemo} />} />
@@ -1141,7 +1142,7 @@ type ImageAsset = {
   imageUrl: string
 }
 
-function ImageAssetLibrary({ projectId, modules }: { projectId: string; modules: ArtModule[] }) {
+function ImageAssetLibrary({ projectId, modules, staticDemo }: { projectId: string; modules: ArtModule[]; staticDemo: boolean }) {
   const artModules = sortModulesForDisplay(modules.filter((module) => !isGameDesignModule(module)))
   const [assets, setAssets] = useState<ImageAsset[]>([])
   const [files, setFiles] = useState<File[]>([])
@@ -1156,6 +1157,10 @@ function ImageAssetLibrary({ projectId, modules }: { projectId: string; modules:
     if (!projectId) return
     setLoading(true)
     try {
+      if (staticDemo) {
+        setAssets(spanishAdventureStaticImageAssets.filter((asset) => !filterModule || asset.moduleId === filterModule))
+        return
+      }
       const query = new URLSearchParams({ projectId })
       if (filterModule) query.set('moduleId', filterModule)
       const response = await fetch(`/api/image-assets?${query}`)
@@ -1169,10 +1174,11 @@ function ImageAssetLibrary({ projectId, modules }: { projectId: string; modules:
     }
   }
 
-  useEffect(() => { void loadAssets() }, [projectId, filterModule])
+  useEffect(() => { void loadAssets() }, [projectId, filterModule, staticDemo])
 
   const uploadAssets = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (staticDemo) return setMessage({ type: 'error', text: 'GitHub Pages 展示版已包含西语冒险项目图片；如需新增图片，请在本地项目中上传后重新发布。' })
     if (files.length === 0) return setMessage({ type: 'error', text: '请先选择图片。' })
     setSubmitting(true)
     setMessage(null)
@@ -1883,12 +1889,19 @@ function MainVisualReferenceImages({ projectId, compact = false }: { projectId: 
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   const loadReferences = async () => {
-    if (!projectId || isStaticDemo) {
+    if (!projectId) {
       setLoading(false)
       return
     }
     setLoading(true)
     try {
+      if (isStaticDemo) {
+        const stored = window.localStorage.getItem(`artflow:main-visual-deliverables:${projectId}:v1`)
+        const parsed = stored ? JSON.parse(stored) : null
+        setAssets(spanishAdventureStaticImageAssets.filter((asset) => asset.moduleId === 'main-visual-design'))
+        setDeliverables(Array.isArray(parsed?.items) ? parsed.items : [])
+        return
+      }
       const query = new URLSearchParams({ projectId, moduleId: 'main-visual-design' })
       const [assetsResponse, deliverablesResponse] = await Promise.all([
         fetch(`/api/image-assets?${query}`),

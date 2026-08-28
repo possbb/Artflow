@@ -17,6 +17,7 @@ import {
   UserRound,
   X,
 } from 'lucide-react'
+import { spanishAdventureStaticImageAssets } from './data/spanishAdventureAssets'
 
 type DeliverableStatus = 'not_started' | 'in_progress' | 'in_review' | 'approved' | 'blocked'
 type RightsStatus = 'pending' | 'cleared' | 'not_applicable'
@@ -170,6 +171,7 @@ export function MainVisualDeliverablesPanel({ projectId, staticDemo }: { project
         if (staticDemo) {
           const stored = window.localStorage.getItem(`artflow:main-visual-deliverables:${projectId}:v1`)
           setRegister(normalizeStaticDeliverables(projectId, stored ? JSON.parse(stored) : null))
+          setImageAssets(spanishAdventureStaticImageAssets.filter((asset) => asset.moduleId === 'main-visual-design'))
         } else {
           const query = new URLSearchParams({ projectId, moduleId: 'main-visual-design' })
           const [deliverablesResponse, assetsResponse] = await Promise.all([
